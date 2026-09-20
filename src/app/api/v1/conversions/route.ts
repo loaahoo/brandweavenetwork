@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { parseConversion, processConversion, type ConversionInput } from "@/lib/conversions";
-import { store } from "@/lib/store";
+import { parseConversion, type ConversionInput } from "@/lib/conversions";
+import { organizationForApiKey, processConversion } from "@/lib/db/ledger";
+import type { Transaction } from "@/lib/types";
 
 /**
  * POST /api/v1/conversions — server-side conversion API (preferred integration).
@@ -21,7 +22,7 @@ const json = (body: unknown, status: number) => NextResponse.json(body, { status
 export async function POST(request: NextRequest) {
   const header = request.headers.get("authorization") ?? "";
   const key = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  const brandId = key ? store().apiKeys.get(key) : undefined;
+  const brandId = key ? await organizationForApiKey(key) : null;
   if (!brandId) return json({ error: { code: "unauthorized", message: "Missing or invalid API key." } }, 401);
 
   const declared = Number(request.headers.get("content-length") ?? 0);
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
   const parsed = parseConversion(body, "api");
   if (!parsed.ok) return json({ error: { code: "invalid_request", message: "Validation failed.", details: parsed.errors } }, 400);
 
-  const outcome = processConversion(parsed.event, brandId);
+  const outcome = await processConversion(parsed.event, brandId);
   switch (outcome.kind) {
     case "created":
       return json({ attributed: true, duplicate: false, transaction: publicTx(outcome.transaction) }, 201);
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function publicTx(t: ReturnType<typeof store>["transactions"][number]) {
+function publicTx(t: Transaction) {
   return {
     id: t.id,
     order_id: t.orderId,

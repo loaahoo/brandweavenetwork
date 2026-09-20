@@ -3,8 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, PageHeader, Stat, StatusBadge, Table, Td, Th } from "@/components/ui/primitives";
 import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
-import { payoutsFor } from "@/lib/queries";
-import { store } from "@/lib/store";
+import { adjustmentsFor, flatFeesFor, payoutsFor } from "@/lib/queries";
 import type { Payout } from "@/lib/types";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 
@@ -13,14 +12,13 @@ export const dynamic = "force-dynamic";
 
 const total = (p: Payout) => p.commissionCents + p.flatFeeCents + p.adjustmentCents;
 
-export default function PayoutsPage() {
-  const all = payoutsFor(CURRENT_BRAND_ID);
+export default async function PayoutsPage() {
+  const all = await payoutsFor(CURRENT_BRAND_ID);
   const owe = all.filter((p) => p.payerId === CURRENT_BRAND_ID);
   const owed = all.filter((p) => p.promoterId === CURRENT_BRAND_ID);
   const open = (rows: Payout[]) => rows.filter((p) => p.status !== "Paid");
   const sum = (rows: Payout[]) => rows.reduce((n, p) => n + total(p), 0);
-  const flatFees = store().flatFees.filter((f) => f.payerId === CURRENT_BRAND_ID || f.promoterId === CURRENT_BRAND_ID);
-  const adjustments = store().adjustments.filter((a) => a.payerId === CURRENT_BRAND_ID || a.promoterId === CURRENT_BRAND_ID);
+  const [flatFees, adjustments] = await Promise.all([flatFeesFor(CURRENT_BRAND_ID), adjustmentsFor(CURRENT_BRAND_ID)]);
 
   return (
     <>

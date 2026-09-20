@@ -22,7 +22,7 @@ export default async function LinksPage({ searchParams }: PageProps<"/links">) {
   const origin = `${proto}://${host}`;
 
   const me = currentBrand();
-  const links = linksFor().filter((l) => l.promoterId === CURRENT_BRAND_ID);
+  const links = (await linksFor()).filter((l) => l.promoterId === CURRENT_BRAND_ID);
   const assets = assetsFor(me.id);
 
   const options: GeneratorOption[] = myPartnerships().flatMap((p) =>

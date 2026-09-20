@@ -454,6 +454,8 @@ model CommissionRule {
   cplCents    BigInt?
   cpcCents    BigInt?
   tierFromCents BigInt? // cumulative eligible revenue where this tier starts
+  flatFeeCents  BigInt? // flat fee that is part of the agreed terms (ledgered separately as FlatFee)
+  flatFeeLabel  String?
   notes       String?
 
   agreement Agreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
@@ -504,7 +506,7 @@ model Campaign {
   partnership Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
   links       TrackingLink[]
 
-  @@index([partnershipId])
+  @@unique([partnershipId, name])
 }
 
 enum LinkKind {
@@ -666,6 +668,8 @@ model Adjustment {
   partnershipId String
   label       String
   amountCents BigInt // negative = clawback
+  promoterOrganizationId String?
+  payerOrganizationId    String?
   createdAt   DateTime @default(now())
 
   payout Payout? @relation(fields: [payoutId], references: [id])
@@ -722,7 +726,7 @@ model ApiKey {
   id             String @id @default(cuid())
   organizationId String
   prefix         String @unique // shown in UI: bw_live_ab12
-  hash           String // SHA-256 of the full key; the key itself is shown once
+  hash           String @unique // SHA-256 of the full key; the key itself is shown once
   label          String?
   createdAt      DateTime @default(now())
   lastUsedAt     DateTime?

@@ -19,7 +19,7 @@ const RANGES = [
 export default async function AnalyticsPage({ searchParams }: PageProps<"/analytics">) {
   const sp = await searchParams;
   const days = RANGES.find(([d]) => String(d) === sp.range)?.[0] ?? 90;
-  const a = analyticsFor(CURRENT_BRAND_ID, days);
+  const a = await analyticsFor(CURRENT_BRAND_ID, days);
   const money = (n: number) => formatMoney(n, "USD", { compact: n >= 10_000_000 });
   const rows = (list: { name: string; revenueCents: number; conversions: number }[]) =>
     list.slice(0, 6).map((r) => ({ label: r.name, value: r.revenueCents, sub: `${formatNumber(r.conversions)} conversions` }));

@@ -1,71 +1,34 @@
 /**
- * Runtime store — an in-memory stand-in for the database.
+ * Runtime store — an in-memory stand-in for the parts of the app not yet on Postgres:
+ * partnerships & deal terms, opportunities, connection requests, messages and the team.
  *
- * Everything the app *writes* (clicks, conversions, new links, messages,
- * requests) lands here; seeded data lives in ./data. Swap this module for
- * Prisma queries (see prisma/schema.prisma) and nothing above it changes.
- * It is attached to globalThis so dev hot-reloads keep state, and it does NOT
- * survive a serverless cold start — it is demo scaffolding, not persistence.
+ * The money pipeline (links, clicks, conversions, transactions, flat fees, payouts,
+ * adjustments, API keys) has moved to the database — see src/lib/db/ledger.ts.
+ *
+ * Attached to globalThis so dev hot-reloads keep state. It does NOT survive a serverless
+ * cold start: this is scaffolding until those entities move over too.
  */
-import { BRANDS } from "./data/brands";
 import { CONNECTION_REQUESTS, MESSAGES, OPPORTUNITIES, PARTNERSHIPS } from "./data/partnerships";
-import {
-  SEED_ADJUSTMENTS,
-  TEAM,
-  SEED_FLAT_FEES,
-  SEED_LINKS,
-  SEED_PAYOUTS,
-  SEED_TRANSACTIONS,
-} from "./data/ledger";
-import type {
-  Adjustment,
-  Click,
-  ConnectionRequest,
-  ConversionEvent,
-  FlatFee,
-  Message,
-  Opportunity,
-  Partnership,
-  Payout,
-  TeamMember,
-  TrackingLink,
-  Transaction,
-} from "./types";
+import { TEAM } from "./data/ledger";
+import type { ConnectionRequest, Message, Opportunity, Partnership, TeamMember } from "./types";
 
 interface Store {
-  links: TrackingLink[];
-  clicks: Click[];
-  conversions: (ConversionEvent & { attributed: boolean; reasons: string[]; payerId: string })[];
-  transactions: Transaction[];
-  adjustments: Adjustment[];
-  flatFees: FlatFee[];
-  payouts: Payout[];
   messages: Message[];
   requests: ConnectionRequest[];
   partnerships: Partnership[];
   opportunities: Opportunity[];
   team: TeamMember[];
-  /** Demo API keys → brand id. In production keys are hashed at rest and scoped per organization. */
-  apiKeys: Map<string, string>;
 }
 
 const g = globalThis as unknown as { __brandweave?: Store };
 
 function init(): Store {
   return {
-    links: structuredClone(SEED_LINKS),
-    clicks: [],
-    conversions: [],
-    transactions: structuredClone(SEED_TRANSACTIONS),
-    adjustments: structuredClone(SEED_ADJUSTMENTS),
-    flatFees: structuredClone(SEED_FLAT_FEES),
-    payouts: structuredClone(SEED_PAYOUTS),
     messages: structuredClone(MESSAGES),
     requests: structuredClone(CONNECTION_REQUESTS),
     partnerships: structuredClone(PARTNERSHIPS),
     opportunities: structuredClone(OPPORTUNITIES),
     team: structuredClone(TEAM),
-    apiKeys: new Map(BRANDS.map((b) => [`bw_test_${b.id}_demo`, b.id])),
   };
 }
 

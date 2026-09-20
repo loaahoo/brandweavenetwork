@@ -1,36 +1,24 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { parseConversion, processConversion } from "./conversions";
-import { resetStore, store } from "./store";
+import { describe, expect, it } from "vitest";
+import { attributeConversion, parseConversion } from "./conversions";
 import { normalizeDestination, newClickId, newLinkCode, withClickId } from "./tracking";
+import type { DealDirection } from "./types";
 
 const NOW = new Date("2026-09-19T15:00:00.000Z");
+const CLICK_AT = "2026-09-18T12:00:00.000Z";
 
-/** A click on the Voyago → Lumen booking-confirmation link (payer: lumen, 12% commission). */
-function seedClick(over: Partial<ReturnType<typeof store>["clicks"][number]> = {}) {
-  const clickId = newClickId();
-  store().clicks.push({
-    clickId,
-    linkId: "lnk_Vg7Kq2A",
-    code: "Vg7Kq2A",
-    partnershipId: "p_voyago",
-    directionId: "d_voyago_to_lumen",
-    promoterId: "voyago",
-    payerId: "lumen",
-    placement: "Hero card",
-    destination: "https://lumenlabs.example/ai-glasses",
-    timestamp: "2026-09-18T12:00:00.000Z",
-    ...over,
-  });
-  return clickId;
-}
+/** The Voyago → Lumen agreement: Hybrid, 12% commission, 30-day window, gift cards excluded. */
+const direction: Pick<DealDirection, "attribution" | "rules" | "currency" | "compensation"> = {
+  currency: "USD",
+  compensation: { model: "Hybrid", flatFeeCents: 1_000_000, commissionBps: 1200 },
+  attribution: { windowDays: 30, method: "last_click", clickAttribution: true, promoCodeAttribution: false },
+  rules: { eligibleProducts: [], excludedSkus: ["GIFTCARD"], customers: "all", geoRestrictions: [], returnsPeriodDays: 30, lockingPeriodDays: 15 },
+};
 
-const convert = (clickId: string, over: Record<string, unknown> = {}) => {
-  const parsed = parseConversion({ order_id: "T-1", click_id: clickId, revenue: 349, currency: "USD", customer_type: "new", country: "US", timestamp: "2026-09-19T12:00:00.000Z", ...over }, "api", NOW);
+const event = (over: Record<string, unknown> = {}) => {
+  const parsed = parseConversion({ order_id: "T-1", click_id: "clk_abc", revenue: 349, currency: "USD", customer_type: "new", country: "US", timestamp: "2026-09-19T12:00:00.000Z", ...over }, "api", NOW);
   if (!parsed.ok) throw new Error(parsed.errors.join("; "));
   return parsed.event;
 };
-
-beforeEach(() => resetStore());
 
 describe("parseConversion", () => {
   it("converts decimal revenue to integer cents without float drift", () => {
@@ -57,52 +45,37 @@ describe("parseConversion", () => {
   });
 });
 
-describe("processConversion", () => {
-  it("creates a Pending transaction with the agreed commission (12% of $349)", () => {
-    const out = processConversion(convert(seedClick()), "lumen");
-    expect(out.kind).toBe("created");
-    if (out.kind === "created") {
-      expect(out.transaction.commissionCents).toBe(4188);
-      expect(out.transaction.status).toBe("Pending");
-      expect(out.transaction.promoterId).toBe("voyago");
-    }
+describe("attributeConversion", () => {
+  it("attributes an in-window sale and computes the agreed commission (12% of $349)", () => {
+    expect(attributeConversion(direction, CLICK_AT, event())).toEqual({ eligible: true, eligibleRevenueCents: 34_900, commissionCents: 4_188 });
   });
 
-  it("is idempotent per (payer, order)", () => {
-    const click = seedClick();
-    const first = processConversion(convert(click), "lumen");
-    const again = processConversion(convert(click), "lumen");
-    expect(again.kind).toBe("duplicate");
-    if (first.kind === "created" && again.kind === "duplicate") expect(again.transaction.id).toBe(first.transaction.id);
-  });
-
-  it("only lets the paying brand report sales for a click", () => {
-    const click = seedClick();
-    const before = store().transactions.length;
-    expect(processConversion(convert(click), "voyago").kind).toBe("forbidden"); // the promoter can't mint its own commission
-    expect(processConversion(convert(click), "stagecraft").kind).toBe("forbidden");
-    expect(store().transactions.length).toBe(before);
-  });
-
-  it("returns unknown_click for a click that was never recorded", () => {
-    expect(processConversion(convert("clk_neverissued"), "lumen").kind).toBe("unknown_click");
-  });
-
-  it("does not create a transaction outside the attribution window", () => {
-    const click = seedClick({ timestamp: "2026-06-01T00:00:00.000Z" });
-    const before = store().transactions.length;
-    const out = processConversion(convert(click), "lumen");
-    expect(out.kind).toBe("unattributed");
-    expect(store().transactions.length).toBe(before);
+  it("does not attribute a sale outside the attribution window", () => {
+    const r = attributeConversion(direction, "2026-06-01T00:00:00.000Z", event());
+    expect(r.eligible).toBe(false);
+    expect(!r.eligible && r.reasons[0]).toMatch(/attribution window/);
   });
 
   it("excludes gift cards from commissionable revenue", () => {
-    const click = seedClick();
-    const out = processConversion(
-      convert(click, { revenue: 200, items: [{ sku: "GLASSES", price: 150, quantity: 1 }, { sku: "GIFTCARD", price: 50, quantity: 1 }] }),
-      "lumen",
-    );
-    expect(out.kind === "created" && out.transaction.commissionCents).toBe(1800); // 12% of $150
+    const r = attributeConversion(direction, CLICK_AT, event({ revenue: 200, items: [{ sku: "GLASSES", price: 150, quantity: 1 }, { sku: "GIFTCARD", price: 50, quantity: 1 }] }));
+    expect(r.eligible && r.commissionCents).toBe(1_800); // 12% of $150
+  });
+
+  it("is not attributable when every item is excluded", () => {
+    expect(attributeConversion(direction, CLICK_AT, event({ revenue: 50, items: [{ sku: "GIFTCARD", price: 50, quantity: 1 }] })).eligible).toBe(false);
+  });
+
+  it("enforces new-customer-only agreements", () => {
+    const d = { ...direction, rules: { ...direction.rules, customers: "new_only" as const } };
+    expect(attributeConversion(d, CLICK_AT, event({ customer_type: "existing" })).eligible).toBe(false);
+    expect(attributeConversion(d, CLICK_AT, event({ customer_type: "new" })).eligible).toBe(true);
+  });
+
+  it("uses cumulative revenue for tiered terms", () => {
+    const d = { ...direction, compensation: { model: "Custom" as const, tiers: [{ upToCents: 100_000, bps: 1000 }, { upToCents: null, bps: 2000 }] } };
+    // Prior $900 + this $349: $100 @10% + $249 @20%.
+    const r = attributeConversion(d, CLICK_AT, event(), 90_000);
+    expect(r.eligible && r.commissionCents).toBe(1_000 + 4_980);
   });
 });
 

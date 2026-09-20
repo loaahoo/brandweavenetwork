@@ -24,9 +24,9 @@ const ACTIVITY_ICON: Record<ActivityItem["kind"], typeof Link2> = {
   payment: CircleDollarSign,
 };
 
-export default function HomePage() {
+export default async function HomePage() {
   const brand = currentBrand();
-  const a = analyticsFor(brand.id);
+  const a = await analyticsFor(brand.id);
   const matches = matchBrands(brand, undefined, 3);
   const openOpps = store().opportunities.filter((o) => o.brandId !== brand.id && o.status === "Open").length;
   const inProgress = myPartnerships(brand.id).filter((p) => p.stage !== "Live").length;

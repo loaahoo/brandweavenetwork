@@ -19,7 +19,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
   const q = typeof sp.q === "string" ? sp.q.trim().slice(0, 60) : "";
   const page = Math.max(1, parseInt(typeof sp.page === "string" ? sp.page : "1") || 1);
 
-  const all = transactionsFor(CURRENT_BRAND_ID);
+  const all = await transactionsFor(CURRENT_BRAND_ID);
   const counts = TRANSACTION_STATUSES.map((s) => [s, all.filter((t) => t.status === s).length] as const);
   const rows = all.filter((t) => (!status || t.status === status) && (!q || t.orderId.toLowerCase().includes(q.toLowerCase())));
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));

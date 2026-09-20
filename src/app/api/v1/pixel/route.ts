@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
-import { parseConversion, processConversion } from "@/lib/conversions";
+import { parseConversion } from "@/lib/conversions";
+import { processConversion } from "@/lib/db/ledger";
 import { getBrand } from "@/lib/data/brands";
 
 /**
@@ -31,7 +32,10 @@ export async function GET(request: NextRequest) {
       },
       "pixel",
     );
-    if (parsed.ok) processConversion(parsed.event, brandId);
+    if (parsed.ok) {
+      // Never let a database error change the response: a pixel always answers with the GIF.
+      await processConversion(parsed.event, brandId).catch(() => {});
+    }
   }
 
   return new Response(GIF, {

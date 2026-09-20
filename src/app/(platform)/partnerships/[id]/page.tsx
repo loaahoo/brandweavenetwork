@@ -14,10 +14,11 @@ import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
 import { CHANNELS, getChannel } from "@/lib/data/channels";
 import { CURRENT_USER } from "@/lib/data/ledger";
 import { assetsFor, currentBrand, partnerOf, weekly, type DayPoint } from "@/lib/queries";
+import { listLinks, listTransactions } from "@/lib/db/ledger";
 import { getPartnership, store } from "@/lib/store";
 import { trackingUrl } from "@/lib/tracking";
 import type { Brand, DealDirection } from "@/lib/types";
-import { addDays, DEMO_NOW, formatDate, formatMoney, formatNumber, timeAgo } from "@/lib/utils";
+import { addDays, formatDate, formatMoney, formatNumber, timeAgo } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -338,8 +339,8 @@ function ChannelsTab({ directions }: { directions: DealDirection[] }) {
   );
 }
 
-function LinksTab({ partnershipId, partner }: { partnershipId: string; partner: Brand }) {
-  const links = store().links.filter((l) => l.partnershipId === partnershipId);
+async function LinksTab({ partnershipId, partner }: { partnershipId: string; partner: Brand }) {
+  const links = await listLinks(CURRENT_BRAND_ID, { partnershipId });
   const assets = assetsFor(partner.id).filter((a) => a.approved);
   return (
     <div className="space-y-6">
@@ -394,8 +395,8 @@ function LinksTab({ partnershipId, partner }: { partnershipId: string; partner: 
   );
 }
 
-function PerformanceTab({ partnershipId }: { partnershipId: string }) {
-  const txns = store().transactions.filter((t) => t.partnershipId === partnershipId && t.status !== "Reversed");
+async function PerformanceTab({ partnershipId }: { partnershipId: string }) {
+  const txns = (await listTransactions(CURRENT_BRAND_ID, { partnershipId })).filter((t) => t.status !== "Reversed");
   if (txns.length === 0) return <EmptyState icon={<FileText />} title="No performance yet" description="Sales will appear here once tracking links are live and the first conversion is reported." />;
   const to = (t: (typeof txns)[number]) => t.payerId === CURRENT_BRAND_ID;
   const sum = (rows: typeof txns, f: (t: (typeof txns)[number]) => number) => rows.reduce((n, t) => n + f(t), 0);
@@ -404,7 +405,7 @@ function PerformanceTab({ partnershipId }: { partnershipId: string }) {
 
   const buckets = new Map<string, DayPoint>();
   for (let i = 90; i >= 0; i--) {
-    const d = addDays(DEMO_NOW, -i).slice(0, 10);
+    const d = addDays(new Date().toISOString(), -i).slice(0, 10);
     buckets.set(d, { date: d, partnerRevenue: 0, revenueForPartners: 0, conversions: 0 });
   }
   for (const t of txns) {

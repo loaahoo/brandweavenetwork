@@ -7,8 +7,9 @@ import { BRANDS, CURRENT_BRAND_ID, getBrand } from "./data/brands";
 import { channelsForBrand } from "./data/channels";
 import { ASSETS } from "./data/ledger";
 import { store } from "./store";
+import { countClicks, listAdjustments, listFlatFees, listLinks, listPayouts, listTransactions } from "./db/ledger";
 import type { Brand, CompensationModel, Partnership, Transaction } from "./types";
-import { DEMO_NOW, addDays } from "./utils";
+import { addDays } from "./utils";
 
 export const currentBrand = () => getBrand(CURRENT_BRAND_ID)!;
 
@@ -70,24 +71,14 @@ export function discoverBrands(f: DiscoverFilters, me = CURRENT_BRAND_ID) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Ledger                                                               */
+/* Ledger (Postgres)                                                    */
 /* ------------------------------------------------------------------ */
 
-/** Transactions where `me` is the paying brand (partner revenue) or the promoter. */
-export const transactionsFor = (me = CURRENT_BRAND_ID): Transaction[] =>
-  store()
-    .transactions.filter((t) => t.payerId === me || t.promoterId === me)
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-export const linksFor = (me = CURRENT_BRAND_ID) =>
-  store()
-    .links.filter((l) => l.payerId === me || l.promoterId === me)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-export const payoutsFor = (me = CURRENT_BRAND_ID) =>
-  store()
-    .payouts.filter((p) => p.payerId === me || p.promoterId === me)
-    .sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+export const transactionsFor = (me = CURRENT_BRAND_ID): Promise<Transaction[]> => listTransactions(me);
+export const linksFor = (me = CURRENT_BRAND_ID) => listLinks(me);
+export const payoutsFor = (me = CURRENT_BRAND_ID) => listPayouts(me);
+export const flatFeesFor = (me = CURRENT_BRAND_ID) => listFlatFees(me);
+export const adjustmentsFor = (me = CURRENT_BRAND_ID) => listAdjustments(me);
 
 export const assetsFor = (brandId: string) => ASSETS.filter((a) => a.brandId === brandId);
 
@@ -128,7 +119,7 @@ export interface Analytics {
   byCountry: { name: string; revenueCents: number; conversions: number }[];
 }
 
-const monthKey = (iso: string) => iso.slice(0, 10);
+const dayKey = (iso: string) => iso.slice(0, 10);
 
 function tally<K extends string>(rows: Transaction[], key: (t: Transaction) => K) {
   const m = new Map<K, { revenueCents: number; conversions: number }>();
@@ -141,31 +132,37 @@ function tally<K extends string>(rows: Transaction[], key: (t: Transaction) => K
   return [...m.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenueCents - a.revenueCents);
 }
 
-export function analyticsFor(me = CURRENT_BRAND_ID, days = 90): Analytics {
-  const from = addDays(DEMO_NOW, -days);
-  const all = transactionsFor(me).filter((t) => t.date >= from);
+export async function analyticsFor(me = CURRENT_BRAND_ID, days = 90): Promise<Analytics> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const since = new Date(now.getTime() - days * 86_400_000);
+
+  const [all, clicks, flatFees, payouts] = await Promise.all([
+    listTransactions(me, { since }),
+    countClicks(me),
+    listFlatFees(me),
+    listPayouts(me),
+  ]);
+
   const live = all.filter((t) => t.status !== "Reversed");
   const inbound = live.filter((t) => t.payerId === me); // partners → me
   const outbound = live.filter((t) => t.promoterId === me); // me → partners
 
   const sum = (rows: Transaction[], f: (t: Transaction) => number) => rows.reduce((s, t) => s + f(t), 0);
-  const s = store();
-  const myLinks = s.links.filter((l) => l.payerId === me || l.promoterId === me);
-  const clicks = myLinks.reduce((n, l) => n + l.clicks, 0);
   const partnerRevenueCents = sum(inbound, (t) => t.saleCents);
   const commissionPaidCents = sum(inbound.filter((t) => t.status === "Paid"), (t) => t.commissionCents);
   const commissionOwedCents = sum(inbound.filter((t) => t.status !== "Paid"), (t) => t.commissionCents);
-  const flatFeesCents = s.flatFees.filter((f) => f.payerId === me && f.status === "Paid").reduce((n, f) => n + f.amountCents, 0);
+  const flatFeesCents = flatFees.filter((f) => f.payerId === me && f.status === "Paid").reduce((n, f) => n + f.amountCents, 0);
   const totalCostCents = commissionPaidCents + commissionOwedCents + flatFeesCents;
 
   // Daily series, zero-filled so charts have a continuous axis.
   const buckets = new Map<string, DayPoint>();
   for (let i = days; i >= 0; i--) {
-    const d = monthKey(addDays(DEMO_NOW, -i));
+    const d = dayKey(addDays(nowIso, -i));
     buckets.set(d, { date: d, partnerRevenue: 0, revenueForPartners: 0, conversions: 0 });
   }
   for (const t of live) {
-    const b = buckets.get(monthKey(t.date));
+    const b = buckets.get(dayKey(t.date));
     if (!b) continue;
     if (t.payerId === me) b.partnerRevenue += t.saleCents;
     if (t.promoterId === me) b.revenueForPartners += t.saleCents;
@@ -196,7 +193,7 @@ export function analyticsFor(me = CURRENT_BRAND_ID, days = 90): Analytics {
     aovCents: live.length ? Math.round(sum(live, (t) => t.saleCents) / live.length) : 0,
     newCustomers: live.filter((t) => t.customerType === "new").length,
     activePartnerships: myPartnerships(me).filter((p) => p.stage === "Live").length,
-    pendingPayoutsCents: payoutsFor(me)
+    pendingPayoutsCents: payouts
       .filter((p) => p.payerId === me && p.status !== "Paid")
       .reduce((n, p) => n + p.commissionCents + p.flatFeeCents + p.adjustmentCents, 0),
     series: [...buckets.values()],

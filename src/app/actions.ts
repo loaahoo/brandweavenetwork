@@ -6,7 +6,8 @@ import { CURRENT_BRAND_ID, getBrand, saveBrandProfile } from "@/lib/data/brands"
 import { getChannel } from "@/lib/data/channels";
 import { CURRENT_USER } from "@/lib/data/ledger";
 import { getOpportunity, getPartnership, store } from "@/lib/store";
-import { newId, newLinkCode, normalizeDestination } from "@/lib/tracking";
+import { createTrackingLink as createLinkRecord } from "@/lib/db/ledger";
+import { newId, normalizeDestination } from "@/lib/tracking";
 import type { Compensation, CompensationModel, DealDirection, LinkKind, Role } from "@/lib/types";
 
 /**
@@ -203,55 +204,35 @@ export async function createTrackingLink(fd: FormData): Promise<ActionResult<{ c
   const denied = deny("links.create");
   if (denied) return denied as ActionResult<{ code: string }>;
 
-  const partnership = getPartnership(text(fd, "partnershipId", 64));
-  const direction = partnership?.directions.find((d) => d.id === text(fd, "directionId", 64));
-  if (!partnership || !direction) return { ok: false, error: "Choose a partnership and direction." };
-  // Only a member of the partnership may mint links, and only for a direction it promotes in.
-  if (direction.promoterId !== CURRENT_BRAND_ID) return { ok: false, error: "You can only create links for channels you contribute." };
-
   const destination = normalizeDestination(text(fd, "destination", 2000));
   if (!destination) return { ok: false, error: "Enter a valid destination URL, like meta.com/ai-glasses." };
-  // The destination must belong to the paying brand, or the link could redirect traffic anywhere.
-  const payer = getBrand(direction.payerId)!;
-  const host = new URL(destination).hostname.replace(/^www\./, "");
-  const payerHost = payer.website.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0]!;
-  if (host !== payerHost && !host.endsWith(`.${payerHost}`)) {
-    return { ok: false, error: `Destination must be on ${payerHost}.` };
-  }
 
   const kind = text(fd, "kind", 20) as LinkKind;
   if (!LINK_KINDS.includes(kind)) return { ok: false, error: "Choose a link type." };
-  const channelId = text(fd, "channelId", 64);
-  if (channelId && !direction.channelIds.includes(channelId)) return { ok: false, error: "That channel isn't part of this agreement." };
-  const campaignName = text(fd, "campaignName", 80) || "General";
-  const placement = text(fd, "placement", 120) || "Default";
 
-  const s = store();
-  let code = newLinkCode();
-  while (s.links.some((l) => l.code === code)) code = newLinkCode();
-
-  s.links.unshift({
-    id: `lnk_${code}`,
-    code,
-    partnershipId: partnership.id,
-    directionId: direction.id,
-    promoterId: direction.promoterId,
-    payerId: direction.payerId,
-    campaignName,
-    channelId: channelId || undefined,
-    channelName: (channelId && getChannel(channelId)?.name) || "Direct",
-    placement,
+  // The agreement in the database is the source of truth for who may promote what.
+  const result = await createLinkRecord({
+    agreementId: text(fd, "directionId", 64),
+    promoterId: CURRENT_BRAND_ID,
+    campaignName: text(fd, "campaignName", 80) || "General",
+    channelId: text(fd, "channelId", 64) || undefined,
+    placement: text(fd, "placement", 120) || "Default",
     creative: text(fd, "creative", 80) || undefined,
     kind,
     destination,
-    createdAt: new Date().toISOString(),
-    createdBy: CURRENT_USER.name,
-    clicks: 0,
-    conversions: 0,
-    revenueCents: 0,
+    createdById: CURRENT_USER.id,
+    // The destination must belong to the paying brand, or the link could redirect traffic anywhere.
+    validateDestination: (payerId) => {
+      const payer = getBrand(payerId);
+      if (!payer) return "Unknown paying brand.";
+      const host = new URL(destination).hostname.replace(/^www\./, "");
+      const payerHost = payer.website.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0]!;
+      return host === payerHost || host.endsWith(`.${payerHost}`) ? null : `Destination must be on ${payerHost}.`;
+    },
   });
+  if (!result.ok) return result;
   revalidatePath("/links");
-  return { ok: true, data: { code } };
+  return { ok: true, data: { code: result.code } };
 }
 
 /* ---------- Deal proposals ---------- */

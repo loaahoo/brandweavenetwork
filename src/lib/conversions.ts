@@ -1,16 +1,18 @@
 /**
- * Conversion pipeline shared by the server-side API and the tracking pixel.
+ * Conversion input handling shared by the server-side API and the tracking pixel.
  *
- *   conversion event → join to click → eligibility → commission → Transaction (Pending)
+ *   parseConversion()      untrusted input → a validated ConversionEvent
+ *   attributeConversion()  PURE decision: is it attributable, and what is the commission?
+ *
+ * The database side (joining to the click, idempotency, writing rows) lives in
+ * src/lib/db/ledger.ts.
  *
  * Trust model: the *payer* (the brand whose sales these are) authenticates the
  * event. A brand can only report conversions on links where it is the payer,
  * so one brand can never mint commissions against another's agreement.
  */
 import { computeSaleCommission, evaluateEligibility } from "./commission";
-import { getPartnership, store } from "./store";
-import { newId } from "./tracking";
-import type { ConversionEvent, Currency, LineItem, Transaction } from "./types";
+import type { ConversionEvent, Currency, DealDirection, LineItem, Transaction } from "./types";
 
 const CURRENCIES: Currency[] = ["USD", "EUR", "GBP", "CAD", "AUD"];
 const MAX_REVENUE_CENTS = 100_000_000_00; // sanity cap: $100M per order
@@ -108,63 +110,25 @@ export type ConversionOutcome =
   | { kind: "unknown_click" }
   | { kind: "forbidden" };
 
+export type Attribution =
+  | { eligible: true; eligibleRevenueCents: number; commissionCents: number }
+  | { eligible: false; reasons: string[] };
+
 /**
- * @param reportingBrandId the brand that authenticated the request.
+ * Decide whether a conversion is attributable under an agreement and what it earns.
+ * `priorRevenueCents` is the agreement's cumulative eligible revenue so far (for tiered terms).
  */
-export function processConversion(event: ConversionEvent, reportingBrandId: string): ConversionOutcome {
-  const s = store();
-  const click = s.clicks.find((c) => c.clickId === event.clickId);
-  if (!click) return { kind: "unknown_click" };
-
-  // Only the paying brand may report sales for this click.
-  if (click.payerId !== reportingBrandId) return { kind: "forbidden" };
-
-  // Idempotency: one transaction per (payer, order).
-  const existing = s.transactions.find((t) => t.payerId === reportingBrandId && t.orderId === event.orderId);
-  if (existing) return { kind: "duplicate", transaction: existing };
-
-  const partnership = getPartnership(click.partnershipId);
-  const direction = partnership?.directions.find((d) => d.id === click.directionId);
-  if (!partnership || !direction) return { kind: "unknown_click" };
-
-  const eligibility = evaluateEligibility(direction, click.timestamp, event);
-  if (!eligibility.eligible) {
-    s.conversions.push({ ...event, attributed: false, reasons: eligibility.reasons, payerId: reportingBrandId });
-    return { kind: "unattributed", reasons: eligibility.reasons };
-  }
-
-  const prior = s.transactions
-    .filter((t) => t.directionId === direction.id && t.status !== "Reversed")
-    .reduce((sum, t) => sum + t.saleCents, 0);
-  const commissionCents = computeSaleCommission(direction.compensation, eligibility.eligibleRevenueCents, prior);
-
-  const link = s.links.find((l) => l.id === click.linkId);
-  const transaction: Transaction = {
-    id: newId("txn"),
-    partnershipId: partnership.id,
-    directionId: direction.id,
-    promoterId: direction.promoterId,
-    payerId: direction.payerId,
-    orderId: event.orderId,
-    clickId: event.clickId,
-    linkId: click.linkId,
-    date: event.timestamp,
-    saleCents: event.revenueCents,
-    commissionCents,
-    currency: event.currency,
-    status: "Pending",
-    channelName: link?.channelName ?? "Direct",
-    campaignName: link?.campaignName ?? "—",
-    customerType: event.customerType,
-    country: event.country,
-    source: event.source,
+export function attributeConversion(
+  direction: Pick<DealDirection, "attribution" | "rules" | "currency" | "compensation">,
+  clickAt: string,
+  event: ConversionEvent,
+  priorRevenueCents = 0,
+): Attribution {
+  const eligibility = evaluateEligibility(direction, clickAt, event);
+  if (!eligibility.eligible) return { eligible: false, reasons: eligibility.reasons };
+  return {
+    eligible: true,
+    eligibleRevenueCents: eligibility.eligibleRevenueCents,
+    commissionCents: computeSaleCommission(direction.compensation, eligibility.eligibleRevenueCents, priorRevenueCents),
   };
-
-  s.transactions.unshift(transaction);
-  s.conversions.push({ ...event, attributed: true, reasons: [], payerId: reportingBrandId });
-  if (link) {
-    link.conversions += 1;
-    link.revenueCents += event.revenueCents;
-  }
-  return { kind: "created", transaction };
 }
