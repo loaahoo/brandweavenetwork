@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/*
+ * BrandWeave design tokens.
+ * Neutrals come from Tailwind's slate scale; `brand` is the primary indigo and
+ * `strand-*` are the four accent colours used only in weave illustrations,
+ * category chips and chart series.
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-ink: #0b1020;
+  --color-canvas: #f7f8fb;
+
+  --color-brand-50: #f1f2ff;
+  --color-brand-100: #e4e6ff;
+  --color-brand-200: #cdd0ff;
+  --color-brand-300: #a9aeff;
+  --color-brand-400: #7f83fb;
+  --color-brand-500: #5b5cf3;
+  --color-brand-600: #4a3fe6;
+  --color-brand-700: #3d31c9;
+  --color-brand-800: #332ca2;
+  --color-brand-900: #2c2980;
+  --color-brand-950: #1b194b;
+
+  --color-strand-indigo: #5b5cf3;
+  --color-strand-teal: #0fa7a0;
+  --color-strand-coral: #f2705c;
+  --color-strand-amber: #f2b13c;
+
+  --shadow-card: 0 1px 2px rgb(11 16 32 / 0.04), 0 1px 1px rgb(11 16 32 / 0.03);
+  --shadow-raised: 0 8px 24px -8px rgb(11 16 32 / 0.12), 0 2px 6px rgb(11 16 32 / 0.05);
+  --shadow-float: 0 24px 60px -20px rgb(27 25 75 / 0.28), 0 8px 20px -8px rgb(11 16 32 / 0.1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-brand-200);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+
+/* Weave animation: strands draw in once, then hold. */
+@keyframes strand-draw {
+  from {
+    stroke-dashoffset: var(--len, 600);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.strand-anim {
+  stroke-dasharray: var(--len, 600);
+  stroke-dashoffset: var(--len, 600);
+  animation: strand-draw 1.6s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .strand-anim {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .fade-up {
+    animation: none;
+  }
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
 }

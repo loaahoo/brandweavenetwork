@@ -1,0 +1,747 @@
+// BrandWeave Network — data model.
+//
+// Conventions
+//  - Every tenant-owned row carries an organization id; queries must always filter on it.
+//  - Money is BigInt minor units (cents). Rates are Int basis points (1500 = 15%).
+//  - A Partnership holds 0–2 Agreements: one per *direction*. `promoter` is the brand
+//    exposing channels and generating Partner Revenue; `payer` is the brand that owes.
+//  - Tracking is its own pipeline: TrackingLink → Click → Conversion → Transaction → Payout.
+//
+// Mirrors src/lib/types.ts, which the in-memory demo store implements today.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/* ============================== Identity ============================== */
+
+model User {
+  id          String   @id @default(cuid())
+  externalId  String   @unique // auth provider subject (Clerk / Auth.js)
+  email       String   @unique
+  name        String
+  createdAt   DateTime @default(now())
+
+  memberships BrandUser[]
+  messages    Message[]
+  notifications Notification[]
+}
+
+/// A company account. One shared workspace per brand.
+model Organization {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  profile        BrandProfile?
+  members        BrandUser[]
+  channels       MarketingChannel[]
+  opportunities  Opportunity[]
+  assets         Asset[]
+  integrations   Integration[]
+  apiKeys        ApiKey[]
+  sentRequests     ConnectionRequest[] @relation("RequestFrom")
+  receivedRequests ConnectionRequest[] @relation("RequestTo")
+  partnerships   PartnershipMember[]
+  promotesFor    Agreement[] @relation("AgreementPromoter")
+  paysFor        Agreement[] @relation("AgreementPayer")
+  links          TrackingLink[] @relation("LinkPromoter")
+  linksReceiving TrackingLink[] @relation("LinkPayer")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  PARTNERSHIP_MANAGER
+  MARKETING_MANAGER
+  FINANCE
+  ANALYST
+  READ_ONLY
+}
+
+enum MemberStatus {
+  ACTIVE
+  INVITED
+}
+
+model BrandUser {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String?
+  email          String
+  role           Role
+  status         MemberStatus @default(INVITED)
+  invitedAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@unique([organizationId, email])
+  @@index([userId])
+}
+
+/* ============================ Brand profile =========================== */
+
+enum BusinessType {
+  B2C
+  B2B
+  B2B2C
+}
+
+enum Presence {
+  ONLINE
+  OFFLINE
+  OMNICHANNEL
+}
+
+enum BrandSize {
+  STARTUP
+  GROWTH
+  MID_MARKET
+  ENTERPRISE
+}
+
+model BrandProfile {
+  organizationId String @id
+  tagline        String?
+  website        String?
+  logoUrl        String?
+  industry       String
+  subcategory    String?
+  headquarters   String?
+  markets        String[]
+  description    String?
+  productCategories String[]
+  averageOrderValueCents BigInt?
+  businessModel  String?
+  businessType   BusinessType @default(B2C)
+  presence       Presence     @default(ONLINE)
+  size           BrandSize?
+  lifecycleStages String[]
+  lookingFor     String[]
+  partnershipModels CompensationModel[]
+  verified       Boolean @default(false)
+
+  // Audience — every field optional.
+  primaryAudience   String?
+  ageRanges         String[]
+  audienceGeography String[]
+  interests         String[]
+  segments          String[]
+  householdIncome   String?
+  customerType      String?
+  purchaseBehavior  String?
+  loyaltyMembers    Int?
+  monthlyCustomers  Int?
+  monthlyTraffic    Int?
+  appUsers          Int?
+  emailSubscribers  Int?
+  socialFollowing   Int?
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([industry])
+}
+
+/* ======================== Available Channels ========================= */
+
+enum ChannelCategory {
+  WEBSITE
+  EMAIL
+  MESSAGING
+  APP
+  LOYALTY
+  SOCIAL_CONTENT
+  PHYSICAL
+  EVENTS
+  PRODUCT
+}
+
+enum ChannelStatus {
+  AVAILABLE
+  LIMITED
+  WAITLIST
+  PAUSED
+}
+
+enum CompensationModel {
+  COMMISSION
+  CPA
+  CPL
+  CPC
+  REVENUE_SHARE
+  FLAT_FEE
+  HYBRID
+  CUSTOM
+}
+
+model MarketingChannel {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  category       ChannelCategory
+  description    String
+  monthlyReach   Int?
+  geography      String[]
+  segment        String?
+  placementExamples String[]
+  imageUrls      String[]
+  partnershipTypes CompensationModel[]
+  compensationPreference String?
+  minimumCommitment String?
+  restrictions   String[]
+  approvalRequired Boolean @default(true)
+  status         ChannelStatus @default(AVAILABLE)
+  desiredPartnerCategories String[]
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  links        TrackingLink[]
+  agreements   AgreementChannel[]
+
+  @@index([organizationId])
+  @@index([category, status])
+}
+
+/* ===================== Opportunities & connections =================== */
+
+enum OpportunityStatus {
+  OPEN
+  IN_REVIEW
+  CLOSED
+}
+
+model Opportunity {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  concept        String
+  lookingFor     String[]
+  offering       String[]
+  channelsWanted String[]
+  models         CompensationModel[]
+  status         OpportunityStatus @default(OPEN)
+  closesAt       DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requests     ConnectionRequest[]
+
+  @@index([organizationId])
+  @@index([status, createdAt])
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  QUESTION
+}
+
+model ConnectionRequest {
+  id                 String   @id @default(cuid())
+  fromOrganizationId String
+  toOrganizationId   String
+  opportunityId      String?  // set when this is an application to an Opportunity
+  intro              String
+  idea               String
+  channelIds         String[]
+  proposedModel      CompensationModel?
+  status             RequestStatus @default(PENDING)
+  createdAt          DateTime @default(now())
+  respondedAt        DateTime?
+  partnershipId      String?  @unique // created on accept
+
+  from        Organization @relation("RequestFrom", fields: [fromOrganizationId], references: [id])
+  to          Organization @relation("RequestTo", fields: [toOrganizationId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+  partnership Partnership? @relation(fields: [partnershipId], references: [id])
+
+  @@index([toOrganizationId, status])
+  @@index([fromOrganizationId])
+}
+
+/* ============================ Partnerships ============================ */
+
+enum DealStage {
+  DISCUSSION
+  PROPOSAL
+  TERMS
+  INTEGRATION
+  LIVE
+}
+
+enum ProposalStatus {
+  NONE
+  DRAFT
+  SENT
+  COUNTERED
+  ACCEPTED
+}
+
+/// The Deal Room.
+model Partnership {
+  id        String   @id @default(cuid())
+  name      String
+  stage     DealStage @default(DISCUSSION)
+  summary   String?
+  nextStep  String?
+  proposalStatus ProposalStatus @default(NONE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       PartnershipMember[]
+  conversation  Conversation?
+  proposals     Proposal[]
+  agreements    Agreement[]
+  campaigns     Campaign[]
+  links         TrackingLink[]
+  transactions  Transaction[]
+  payouts       Payout[]
+  flatFees      FlatFee[]
+  request       ConnectionRequest?
+}
+
+model PartnershipMember {
+  id             String @id @default(cuid())
+  partnershipId  String
+  organizationId String
+  ownerName      String? // internal owner at this org
+
+  partnership  Partnership  @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([partnershipId, organizationId])
+  @@index([organizationId])
+}
+
+/* ============================ Conversation ============================ */
+
+model Conversation {
+  id            String @id @default(cuid())
+  partnershipId String @unique
+  partnership   Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  messages      Message[]
+}
+
+enum MessageKind {
+  MESSAGE
+  NOTE   // internal to the author's organization; never returned to the partner
+  SYSTEM
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  authorId       String?
+  authorOrganizationId String
+  kind           MessageKind @default(MESSAGE)
+  body           String
+  mentions       String[]
+  attachments    Json?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?        @relation(fields: [authorId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+/* ======================== Proposals & agreements ====================== */
+
+/// A negotiation round: a snapshot of proposed terms for every direction.
+model Proposal {
+  id             String   @id @default(cuid())
+  partnershipId  String
+  version        Int
+  proposedByOrganizationId String
+  status         ProposalStatus @default(SENT)
+  terms          Json     // full snapshot of both directions as proposed
+  createdAt      DateTime @default(now())
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@unique([partnershipId, version])
+}
+
+enum AttributionMethod {
+  LAST_CLICK
+  FIRST_CLICK
+  CUSTOM
+}
+
+enum CustomerRule {
+  NEW_ONLY
+  EXISTING_OK
+  ALL
+}
+
+enum PaymentTerms {
+  NET15
+  NET30
+  NET45
+  CUSTOM
+}
+
+/// The accepted terms for ONE direction: `promoter` drives sales to `payer`, who pays.
+model Agreement {
+  id                 String   @id @default(cuid())
+  partnershipId      String
+  promoterOrganizationId String
+  payerOrganizationId    String
+  currency           String   @default("USD")
+
+  attributionWindowDays Int   @default(30)
+  attributionMethod  AttributionMethod @default(LAST_CLICK)
+  clickAttribution   Boolean  @default(true)
+  promoCodeAttribution Boolean @default(false)
+
+  eligibleProducts   String[]
+  excludedSkus       String[]
+  customerRule       CustomerRule @default(ALL)
+  geoRestrictions    String[]
+  returnsPeriodDays  Int      @default(30)
+  lockingPeriodDays  Int      @default(15)
+
+  paymentTerms       PaymentTerms @default(NET30)
+  customPaymentDays  Int?
+
+  effectiveFrom      DateTime @default(now())
+  endedAt            DateTime?
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  promoter    Organization @relation("AgreementPromoter", fields: [promoterOrganizationId], references: [id])
+  payer       Organization @relation("AgreementPayer", fields: [payerOrganizationId], references: [id])
+  commissionRules CommissionRule[]
+  channels    AgreementChannel[]
+  flatFees    FlatFee[]
+  links       TrackingLink[]
+  transactions Transaction[]
+
+  // Intended invariant: at most one *live* (endedAt IS NULL) agreement per direction.
+  // Postgres treats NULLs as distinct, so this unique alone does not enforce it — add a partial
+  // unique index in the first migration:
+  //   CREATE UNIQUE INDEX agreement_one_live_per_direction
+  //     ON "Agreement" ("partnershipId", "promoterOrganizationId") WHERE "endedAt" IS NULL;
+  @@unique([partnershipId, promoterOrganizationId, endedAt])
+  @@index([payerOrganizationId])
+}
+
+model AgreementChannel {
+  agreementId String
+  channelId   String
+  agreement Agreement        @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  channel   MarketingChannel @relation(fields: [channelId], references: [id])
+
+  @@id([agreementId, channelId])
+}
+
+/// Performance compensation. Tiered "custom" deals use several rows ordered by `tierFrom`.
+model CommissionRule {
+  id          String @id @default(cuid())
+  agreementId String
+  model       CompensationModel
+  commissionBps Int?
+  cpaCents    BigInt?
+  cplCents    BigInt?
+  cpcCents    BigInt?
+  tierFromCents BigInt? // cumulative eligible revenue where this tier starts
+  notes       String?
+
+  agreement Agreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+
+  @@index([agreementId])
+}
+
+enum FlatFeeStatus {
+  SCHEDULED
+  PAYABLE
+  PAID
+}
+
+/// Non-performance payment: sponsorship, placement, activation, launch fee.
+model FlatFee {
+  id            String @id @default(cuid())
+  partnershipId String
+  agreementId   String
+  label         String
+  amountCents   BigInt
+  dueDate       DateTime
+  status        FlatFeeStatus @default(SCHEDULED)
+  payoutId      String?
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id])
+  agreement   Agreement   @relation(fields: [agreementId], references: [id])
+  payout      Payout?     @relation(fields: [payoutId], references: [id])
+
+  @@index([agreementId])
+}
+
+/* ============================ Tracking ================================ */
+
+enum CampaignStatus {
+  DRAFT
+  LIVE
+  PAUSED
+  ENDED
+}
+
+model Campaign {
+  id            String @id @default(cuid())
+  partnershipId String
+  name          String
+  status        CampaignStatus @default(DRAFT)
+  createdAt     DateTime @default(now())
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  links       TrackingLink[]
+
+  @@index([partnershipId])
+}
+
+enum LinkKind {
+  STANDARD
+  CAMPAIGN
+  PLACEMENT
+  PRODUCT
+  DEEP_LINK
+  QR_CODE
+}
+
+model TrackingLink {
+  id            String @id @default(cuid())
+  code          String @unique // brandweavenetwork.com/r/<code> → go.brandweavenetwork.com/<code>
+  partnershipId String
+  agreementId   String
+  promoterOrganizationId String
+  payerOrganizationId    String
+  campaignId    String?
+  channelId     String?
+  placement     String
+  creative      String?
+  kind          LinkKind @default(STANDARD)
+  destination   String
+  createdById   String?
+  createdAt     DateTime @default(now())
+  archivedAt    DateTime?
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id])
+  agreement   Agreement   @relation(fields: [agreementId], references: [id])
+  promoter    Organization @relation("LinkPromoter", fields: [promoterOrganizationId], references: [id])
+  payer       Organization @relation("LinkPayer", fields: [payerOrganizationId], references: [id])
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id])
+  channel     MarketingChannel? @relation(fields: [channelId], references: [id])
+  clicks      Click[]
+
+  @@index([promoterOrganizationId])
+  @@index([partnershipId])
+}
+
+/// One row per tracked click. High-volume: append-only, partition by month when needed.
+model Click {
+  id          String   @id // clk_… returned to the destination as bw_click_id
+  linkId      String
+  occurredAt  DateTime @default(now())
+  country     String?
+  userAgent   String?
+  ipHash      String?  // salted hash; raw IPs are never stored
+
+  link        TrackingLink @relation(fields: [linkId], references: [id])
+  conversions Conversion[]
+
+  @@index([linkId, occurredAt])
+}
+
+enum ConversionSource {
+  API
+  PIXEL
+}
+
+/// A raw event reported by the paying brand, kept even when it is not attributed (audit trail).
+model Conversion {
+  id             String   @id @default(cuid())
+  payerOrganizationId String
+  orderId        String
+  clickId        String?
+  revenueCents   BigInt
+  currency       String
+  customerType   String
+  country        String?
+  items          Json?
+  source         ConversionSource
+  occurredAt     DateTime
+  receivedAt     DateTime @default(now())
+  attributed     Boolean
+  rejectionReasons String[]
+
+  click       Click?       @relation(fields: [clickId], references: [id])
+  transaction Transaction?
+
+  // Idempotency: re-sending an order never creates a second sale.
+  @@unique([payerOrganizationId, orderId])
+  @@index([clickId])
+}
+
+/* ===================== Transactions & payouts ======================== */
+
+enum TransactionStatus {
+  PENDING
+  APPROVED
+  LOCKED
+  PAYABLE
+  PAID
+  REVERSED
+}
+
+model Transaction {
+  id            String @id @default(cuid())
+  partnershipId String
+  agreementId   String
+  conversionId  String @unique
+  payoutId      String?
+  saleCents     BigInt
+  commissionCents BigInt
+  currency      String
+  status        TransactionStatus @default(PENDING)
+  reversedReason String?
+  occurredAt    DateTime
+  approvedAt    DateTime?
+  lockedAt      DateTime?
+  payableAt     DateTime?
+  paidAt        DateTime?
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id])
+  agreement   Agreement   @relation(fields: [agreementId], references: [id])
+  conversion  Conversion  @relation(fields: [conversionId], references: [id])
+  payout      Payout?     @relation(fields: [payoutId], references: [id])
+
+  @@index([agreementId, status])
+  @@index([partnershipId, occurredAt])
+}
+
+enum PayoutStatus {
+  DRAFT
+  PAYABLE
+  PAID
+  OVERDUE
+}
+
+/// What the payer owes the promoter for a period: commission + flat fees + adjustments.
+model Payout {
+  id            String @id @default(cuid())
+  partnershipId String
+  promoterOrganizationId String
+  payerOrganizationId    String
+  period        String
+  dueDate       DateTime
+  status        PayoutStatus @default(DRAFT)
+  commissionCents BigInt @default(0)
+  flatFeeCents    BigInt @default(0)
+  adjustmentCents BigInt @default(0)
+  currency      String @default("USD")
+  paidAt        DateTime?
+  externalRef   String? // payment provider reference (Stripe Connect) once automated
+
+  partnership  Partnership @relation(fields: [partnershipId], references: [id])
+  transactions Transaction[]
+  flatFees     FlatFee[]
+  adjustments  Adjustment[]
+
+  @@index([payerOrganizationId, status])
+  @@index([promoterOrganizationId, status])
+}
+
+/// Clawbacks for returns on commission that was already paid.
+model Adjustment {
+  id          String @id @default(cuid())
+  payoutId    String?
+  partnershipId String
+  label       String
+  amountCents BigInt // negative = clawback
+  createdAt   DateTime @default(now())
+
+  payout Payout? @relation(fields: [payoutId], references: [id])
+}
+
+/* ============================ Supporting ============================== */
+
+enum AssetKind {
+  LOGO
+  PRODUCT_IMAGE
+  VIDEO
+  GUIDELINES
+  BANNER
+  COPY
+  LANDING_PAGE
+  OFFER
+  PROMO_CODE
+}
+
+model Asset {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  kind           AssetKind
+  storageKey     String? // S3-compatible object key
+  detail         String?
+  approved       Boolean @default(false)
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  AVAILABLE
+}
+
+model Integration {
+  id             String @id @default(cuid())
+  organizationId String
+  provider       String // shopify, woocommerce, stripe, webhook, …
+  status         IntegrationStatus @default(AVAILABLE)
+  config         Json?  // never holds secrets in plaintext; reference a secrets store
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+}
+
+model ApiKey {
+  id             String @id @default(cuid())
+  organizationId String
+  prefix         String @unique // shown in UI: bw_live_ab12
+  hash           String // SHA-256 of the full key; the key itself is shown once
+  label          String?
+  createdAt      DateTime @default(now())
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
