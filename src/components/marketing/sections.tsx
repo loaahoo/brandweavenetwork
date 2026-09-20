@@ -54,7 +54,7 @@ export function Hero() {
       <div className={cn(PAGE, "relative grid items-center gap-14 pb-20 pt-16 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24")}>
         <div className="fade-up">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[13px] font-medium text-slate-600 shadow-card">
-            <LogoMark className="size-4" /> BrandWeave Network
+            <LogoMark className="size-4" /> Brand Weave Network
           </div>
           <h1 className="text-[44px] font-semibold leading-[1.02] tracking-[-0.03em] text-ink sm:text-[64px]">The partnership network for brands.</h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600 sm:text-xl">
@@ -166,7 +166,7 @@ export function Discovery() {
         <SectionHead
           eyebrow="Discover"
           title="Find the brands your customers need next."
-          body="Your customers already buy from other brands before, after and around you. BrandWeave shows you which complementary brands share your audience, and which of their channels are open to you."
+          body="Your customers already buy from other brands before, after and around you. Brand Weave shows you which complementary brands share your audience, and which of their channels are open to you."
         />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {PAIRS.map(([a, b, ca, cb]) => (
@@ -251,7 +251,7 @@ export function HowItWorks() {
   return (
     <section id="how" className="scroll-mt-16 bg-white py-20 sm:py-28">
       <div className={PAGE}>
-        <SectionHead eyebrow="How it works" title="Build partnerships, not just referrals." body="Referral links are the plumbing. BrandWeave covers the whole relationship, from the first hello to the last invoice." />
+        <SectionHead eyebrow="How it works" title="Build partnerships, not just referrals." body="Referral links are the plumbing. Brand Weave covers the whole relationship, from the first hello to the last invoice." />
         <ol className="mt-14 grid gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-7">
           {STEPS.map(([name, Icon, desc], i) => (
             <li key={name} className="relative">
@@ -313,7 +313,7 @@ export function BothWays() {
         <SectionHead
           eyebrow="Reciprocal"
           title="Partnerships work both ways."
-          body="Traditional affiliate programs run one way. On BrandWeave one partnership can hold both: Brand A generates revenue for Brand B, and Brand B generates revenue for Brand A, each with its own channels, terms and payouts."
+          body="Traditional affiliate programs run one way. On Brand Weave one partnership can hold both: Brand A generates revenue for Brand B, and Brand B generates revenue for Brand A, each with its own channels, terms and payouts."
         />
         <div className="rounded-3xl border border-slate-200 bg-canvas p-6 sm:p-8">
           <svg viewBox="0 0 420 220" className="h-auto w-full" role="img" aria-label="Brand A generates revenue for Brand B, and Brand B generates revenue for Brand A">

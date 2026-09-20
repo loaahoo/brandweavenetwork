@@ -1,7 +1,7 @@
 /**
  * Tracking primitives.
  *
- * Flow: a partner clicks a BrandWeave URL → we create a Click with a unique
+ * Flow: a partner clicks a Brand Weave URL → we create a Click with a unique
  * click_id → redirect to the destination with `bw_click_id` appended → the
  * receiving brand stores that id and sends it back with the order → the
  * conversion is joined to the click and the commission engine runs.

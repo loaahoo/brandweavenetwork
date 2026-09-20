@@ -29,7 +29,7 @@ export default async function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" description="Send BrandWeave the orders your partners drive. Server-side is preferred; the pixel is the quickest way to start." />
+      <PageHeader title="Integrations" description="Send Brand Weave the orders your partners drive. Server-side is preferred; the pixel is the quickest way to start." />
 
       <div className="space-y-8">
         {groups.map((g) => (

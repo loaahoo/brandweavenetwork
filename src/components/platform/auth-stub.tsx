@@ -10,7 +10,7 @@ export function AuthStub({ mode }: { mode: "login" | "signup" }) {
   const signup = mode === "signup";
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-5 py-12">
-      <Link href="/" aria-label="BrandWeave Network home" className="mb-8">
+      <Link href="/" aria-label="Brand Weave Network home" className="mb-8">
         <Wordmark />
       </Link>
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-raised">
@@ -40,7 +40,7 @@ export function AuthStub({ mode }: { mode: "login" | "signup" }) {
             </>
           ) : (
             <>
-              New to BrandWeave?{" "}
+              New to Brand Weave?{" "}
               <Link href="/signup" className="font-medium text-brand-700 hover:underline">
                 Join the Network
               </Link>

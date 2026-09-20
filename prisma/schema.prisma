@@ -1,4 +1,4 @@
-// BrandWeave Network — data model.
+// Brand Weave Network — data model.
 //
 // Conventions
 //  - Every tenant-owned row carries an organization id; queries must always filter on it.

@@ -93,7 +93,7 @@ export default async function BrandPage({ params }: PageProps<"/brands/[slug]">)
             ) : (
               <RequestPartnershipDialog brandId={brand.id} brandName={brand.name} channels={channels} />
             )}
-            <span className="text-xs text-slate-500">{brand.activePartnerships} active partnerships on BrandWeave</span>
+            <span className="text-xs text-slate-500">{brand.activePartnerships} active partnerships on Brand Weave</span>
           </div>
         </div>
       </Card>

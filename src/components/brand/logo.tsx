@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The BrandWeave mark: four separate strands enter from the left, cross and
+ * The Brand Weave mark: four separate strands enter from the left, cross and
  * interlock through the middle, and leave as one tight bundle.
  * Each strand is drawn with a thin "halo" underneath in the page colour so the
  * crossings read as over/under without literal rope texture.
@@ -38,7 +38,7 @@ export function Wordmark({ className, inverted = false }: { className?: string; 
     <span className={cn("flex items-center gap-2.5", className)}>
       <LogoMark halo={inverted ? "#0b1020" : "#ffffff"} />
       <span className={cn("flex flex-col leading-none", inverted ? "text-white" : "text-ink")}>
-        <span className="text-[15px] font-semibold tracking-tight">BrandWeave</span>
+        <span className="text-[15px] font-semibold tracking-tight">Brand Weave</span>
         <span className={cn("mt-0.5 text-[10px] font-medium uppercase tracking-[0.2em]", inverted ? "text-white/60" : "text-slate-500")}>
           Network
         </span>

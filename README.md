@@ -1,4 +1,4 @@
-# BrandWeave Network
+# Brand Weave Network
 
 **The partnership network for brands.** *Stronger brands, woven together.*
 
@@ -34,7 +34,7 @@ Open `/` for the marketing site, then **Enter the demo workspace** to explore th
 | Tracking links, QR codes, click redirect, conversion API, tracking pixel | Built and working end-to-end. |
 | Commission engine, transaction lifecycle, reversals, payout statements | Built and unit-tested (`src/lib/commission.ts`). |
 | Transactions, Payouts, Analytics, Integrations, Settings | Built. |
-| **Persistence** | **Not yet.** Writes go to an in-memory store (`src/lib/store.ts`) that resets on restart / serverless cold start. `prisma/schema.prisma` is the validated target model. |
+| **Persistence** | **Schema live, app not switched over yet.** The Prisma schema is migrated to Neon (27 tables). The app itself still reads/writes an in-memory store (`src/lib/store.ts`) that resets on restart / serverless cold start. |
 | Real auth (Clerk / Auth.js with orgs), object storage, email, Stripe payouts, Shopify | Not started (Phase 2). |
 
 All demo brands (Voyago, Lumen Labs, Stagecraft Live, …) are **fictional**. No real company is represented as a member.
@@ -87,7 +87,7 @@ Security properties (covered by `src/lib/conversions.test.ts`): only the **payin
 ## Next steps (in the order of your build priority)
 
 1. **Auth + organizations** — Clerk or Auth.js; replace `CURRENT_USER`; add a `proxy.ts` gate for `(platform)`.
-2. **Persistence** — first Prisma migration (include the partial unique index noted in the schema), then replace `store.ts` / `queries.ts` behind the same function signatures.
+2. **Persistence** — ✅ migration `0001_init` applied to Neon. Remaining: seed the demo data, then replace `store.ts` / `queries.ts` with Prisma queries (tracking pipeline first).
 3. Channel editor + asset uploads (S3-compatible).
 4. Notifications + Resend email; proposal history (`Proposal` snapshots) and contract generation.
 5. Scheduled job to advance transaction statuses and assemble payouts; Stripe Connect for automated payouts.

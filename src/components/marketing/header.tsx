@@ -13,7 +13,7 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-6 px-5 sm:px-8">
-        <Link href="/" aria-label="BrandWeave Network home">
+        <Link href="/" aria-label="Brand Weave Network home">
           <Wordmark />
         </Link>
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
@@ -57,7 +57,7 @@ export function SiteFooter() {
           ))}
         </div>
       </div>
-      <div className="border-t border-slate-100 py-5 text-center text-xs text-slate-400">© {new Date().getFullYear()} BrandWeave Network · brandweavenetwork.com</div>
+      <div className="border-t border-slate-100 py-5 text-center text-xs text-slate-400">© {new Date().getFullYear()} Brand Weave Network · brandweavenetwork.com</div>
     </footer>
   );
 }

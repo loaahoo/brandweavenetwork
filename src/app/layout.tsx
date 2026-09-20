@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://brandweavenetwork.com"),
   title: {
-    default: "BrandWeave Network — The partnership network for brands",
-    template: "%s · BrandWeave Network",
+    default: "Brand Weave Network — The partnership network for brands",
+    template: "%s · Brand Weave Network",
   },
   description:
     "Discover complementary brands, share marketing channels, build partnerships, and turn shared customer experiences into measurable growth.",

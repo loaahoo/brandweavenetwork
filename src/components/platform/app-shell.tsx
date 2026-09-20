@@ -108,7 +108,7 @@ export function AppShell({
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="px-5 pb-4 pt-5">
-        <Link href="/home" aria-label="BrandWeave Network home">
+        <Link href="/home" aria-label="Brand Weave Network home">
           <Wordmark />
         </Link>
       </div>
@@ -150,7 +150,7 @@ export function AppShell({
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur lg:hidden">
-        <Link href="/home" aria-label="BrandWeave Network home">
+        <Link href="/home" aria-label="Brand Weave Network home">
           <Wordmark />
         </Link>
         <button onClick={() => setOpen(true)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" aria-label="Open navigation">

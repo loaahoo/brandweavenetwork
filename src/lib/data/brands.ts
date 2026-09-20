@@ -1,7 +1,7 @@
 import type { Audience, Brand } from "../types";
 
 /**
- * Demo brands. All fictional — no real company is represented as a BrandWeave member.
+ * Demo brands. All fictional — no real company is represented as a Brand Weave member.
  * `lumen` is the demo organization the app is "signed in" as.
  */
 

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * BrandWeave design tokens.
+ * Brand Weave design tokens.
  * Neutrals come from Tailwind's slate scale; `brand` is the primary indigo and
  * `strand-*` are the four accent colours used only in weave illustrations,
  * category chips and chart series.
