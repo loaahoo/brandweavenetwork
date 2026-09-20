@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { parseConversion } from "@/lib/conversions";
 import { processConversion } from "@/lib/db/ledger";
-import { getBrand } from "@/lib/data/brands";
+import { db } from "@/lib/db/client";
 
 /**
  * GET /api/v1/pixel?mid=<brand id>&click_id=clk_…&order_id=1042&revenue=129.50&currency=USD
@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams;
   const brandId = q.get("mid") ?? "";
 
-  if (getBrand(brandId)) {
+  // Only a real organization id is accepted as the reporting brand.
+  if (/^[a-z0-9_-]{1,64}$/i.test(brandId) && (await db().organization.findUnique({ where: { id: brandId }, select: { id: true } }))) {
     const parsed = parseConversion(
       {
         order_id: q.get("order_id") ?? undefined,

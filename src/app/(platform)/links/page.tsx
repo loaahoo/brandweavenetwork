@@ -5,8 +5,8 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import { LinkGenerator, type GeneratorOption } from "@/components/platform/link-generator";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/primitives";
-import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
-import { getChannel } from "@/lib/data/channels";
+import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
 import { assetsFor, currentBrand, linksFor, myPartnerships } from "@/lib/queries";
 import { formatDate, formatMoney, formatNumber } from "@/lib/utils";
 
@@ -21,22 +21,23 @@ export default async function LinksPage({ searchParams }: PageProps<"/links">) {
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${proto}://${host}`;
 
-  const me = currentBrand();
-  const links = (await linksFor()).filter((l) => l.promoterId === CURRENT_BRAND_ID);
-  const assets = assetsFor(me.id);
+  const dir = await getDirectory();
+  const me = currentBrand(dir);
+  const [allLinks, assets, partnerships] = await Promise.all([linksFor(), assetsFor(me.id), myPartnerships()]);
+  const links = allLinks.filter((l) => l.promoterId === CURRENT_BRAND_ID);
 
-  const options: GeneratorOption[] = myPartnerships().flatMap((p) =>
+  const options: GeneratorOption[] = partnerships.flatMap((p) =>
     p.directions
       .filter((d) => d.promoterId === CURRENT_BRAND_ID)
       .map((d) => {
-        const payer = getBrand(d.payerId)!;
+        const payer = dir.brand(d.payerId)!;
         return {
           partnershipId: p.id,
           partnershipName: p.name,
           directionId: d.id,
           payerName: payer.name,
           payerHost: payer.website.replace(/^https?:\/\//, ""),
-          channels: d.channelIds.map((id) => ({ id, name: getChannel(id)?.name ?? id })),
+          channels: d.channelIds.map((id) => ({ id, name: dir.channel(id)?.name ?? id })),
         };
       }),
   );
@@ -89,7 +90,7 @@ export default async function LinksPage({ searchParams }: PageProps<"/links">) {
                         <code className="font-mono text-xs text-slate-800">{`${host}/r/${l.code}`}</code>
                         <div className="max-w-xs truncate text-xs text-slate-400">→ {l.destination.replace(/^https?:\/\//, "")}</div>
                       </Td>
-                      <Td>{getBrand(l.payerId)?.name}</Td>
+                      <Td>{dir.brand(l.payerId)?.name}</Td>
                       <Td>
                         {l.campaignName}
                         <div className="mt-0.5">

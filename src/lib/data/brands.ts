@@ -536,23 +536,5 @@ export const BRANDS: Brand[] = [
   },
 ];
 
+/** The demo organization the app is signed in as until real auth lands. */
 export const CURRENT_BRAND_ID = "lumen";
-
-/**
- * Profile edits made in the app. Kept on globalThis (like the runtime store) so every
- * server bundle sees the same overrides; replaced by the BrandProfile table with Prisma.
- */
-const g = globalThis as unknown as { __bwProfile?: Record<string, Partial<Brand>> };
-const overrides = () => (g.__bwProfile ??= {});
-
-const withOverrides = (b: Brand | undefined): Brand | undefined => {
-  const o = b && overrides()[b.id];
-  return b && o ? { ...b, ...o, audience: { ...b.audience, ...o.audience } } : b;
-};
-
-export const getBrand = (id: string) => withOverrides(BRANDS.find((b) => b.id === id));
-export const getBrandBySlug = (slug: string) => withOverrides(BRANDS.find((b) => b.slug === slug));
-
-export function saveBrandProfile(id: string, patch: Partial<Brand>) {
-  overrides()[id] = { ...overrides()[id], ...patch, audience: { ...overrides()[id]?.audience, ...patch.audience } as Brand["audience"] };
-}

@@ -10,14 +10,14 @@ import { Badge, Card, CardHeader, Chip, EmptyState, StageStepper, Stat, StatusBa
 import { TimeChart } from "@/components/ui/time-chart";
 import { describeCompensation, paymentNetDays } from "@/lib/commission";
 import { can } from "@/lib/constants";
-import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
-import { CHANNELS, getChannel } from "@/lib/data/channels";
+import { CURRENT_BRAND_ID } from "@/lib/data/brands";
 import { CURRENT_USER } from "@/lib/data/ledger";
+import { getDirectory, type Directory } from "@/lib/db/directory";
 import { assetsFor, currentBrand, partnerOf, weekly, type DayPoint } from "@/lib/queries";
 import { listLinks, listTransactions } from "@/lib/db/ledger";
-import { getPartnership, store } from "@/lib/store";
+import { getPartnership, listMessages } from "@/lib/db/network";
 import { trackingUrl } from "@/lib/tracking";
-import type { Brand, DealDirection } from "@/lib/types";
+import type { Brand, DealDirection, Partnership } from "@/lib/types";
 import { addDays, formatDate, formatMoney, formatNumber, timeAgo } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -35,23 +35,20 @@ type Tab = (typeof TABS)[number][0];
 
 export async function generateMetadata({ params }: PageProps<"/partnerships/[id]">): Promise<Metadata> {
   const { id } = await params;
-  return { title: getPartnership(id)?.name ?? "Deal Room" };
+  return { title: (await getPartnership(id, CURRENT_BRAND_ID))?.name ?? "Deal Room" };
 }
 
 export default async function DealRoomPage({ params, searchParams }: PageProps<"/partnerships/[id]">) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const p = getPartnership(id);
-  if (!p || (p.brandAId !== CURRENT_BRAND_ID && p.brandBId !== CURRENT_BRAND_ID)) notFound();
+  // getPartnership only returns rooms the caller is a member of.
+  const [p, dir] = await Promise.all([getPartnership(id, CURRENT_BRAND_ID), getDirectory()]);
+  if (!p) notFound();
 
   const tab: Tab = TABS.some(([t]) => t === sp.tab) ? (sp.tab as Tab) : "overview";
-  const me = currentBrand();
-  const partner = partnerOf(p);
-  const s = store();
-  const messages = s.messages
-    .filter((m) => m.partnershipId === p.id)
-    // Internal notes are visible only to the brand that wrote them.
-    .filter((m) => m.kind !== "note" || m.authorBrandId === CURRENT_BRAND_ID)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const me = currentBrand(dir);
+  const partner = partnerOf(p, dir);
+  // Internal notes are filtered out in the query unless they were written by the caller's organization.
+  const messages = await listMessages(p.id, CURRENT_BRAND_ID);
 
   return (
     <>
@@ -85,7 +82,7 @@ export default async function DealRoomPage({ params, searchParams }: PageProps<"
         ))}
       </nav>
 
-      {tab === "overview" && <Overview p={p} me={me} partner={partner} />}
+      {tab === "overview" && <Overview p={p} me={me} partner={partner} dir={dir} />}
 
       {tab === "messages" && (
         <div className="mx-auto max-w-3xl">
@@ -104,7 +101,7 @@ export default async function DealRoomPage({ params, searchParams }: PageProps<"
                       <span className="h-px flex-1 bg-slate-200" />
                     </li>
                   );
-                const brand = getBrand(m.authorBrandId)!;
+                const brand = dir.brand(m.authorBrandId)!;
                 const mine = m.authorBrandId === CURRENT_BRAND_ID;
                 return (
                   <li key={m.id} className="flex gap-3">
@@ -138,14 +135,14 @@ export default async function DealRoomPage({ params, searchParams }: PageProps<"
         <DealBuilder
           partnership={p}
           brands={[me, partner]}
-          channels={{ [me.id]: CHANNELS.filter((c) => c.brandId === me.id), [partner.id]: CHANNELS.filter((c) => c.brandId === partner.id) }}
+          channels={{ [me.id]: dir.channelsFor(me.id), [partner.id]: dir.channelsFor(partner.id) }}
           canNegotiate={can(CURRENT_USER.role, "deal.negotiate")}
           canAccept={can(CURRENT_USER.role, "deal.accept")}
         />
       )}
 
-      {tab === "channels" && <ChannelsTab directions={p.directions} />}
-      {tab === "links" && <LinksTab partnershipId={p.id} partner={partner} />}
+      {tab === "channels" && <ChannelsTab directions={p.directions} dir={dir} />}
+      {tab === "links" && <LinksTab partnershipId={p.id} partner={partner} dir={dir} />}
       {tab === "performance" && <PerformanceTab partnershipId={p.id} />}
 
       {tab === "files" && (
@@ -192,9 +189,9 @@ export default async function DealRoomPage({ params, searchParams }: PageProps<"
 
 /* ------------------------------------------------------------------ */
 
-function DirectionSummary({ d }: { d: DealDirection }) {
-  const from = getBrand(d.promoterId)!;
-  const to = getBrand(d.payerId)!;
+function DirectionSummary({ d, dir }: { d: DealDirection; dir: Directory }) {
+  const from = dir.brand(d.promoterId)!;
+  const to = dir.brand(d.payerId)!;
   return (
     <Card className="p-5">
       <div className="flex items-center gap-2 text-sm font-semibold text-ink">
@@ -228,14 +225,14 @@ function DirectionSummary({ d }: { d: DealDirection }) {
       </dl>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {d.channelIds.map((c) => (
-          <Chip key={c}>{getChannel(c)?.name}</Chip>
+          <Chip key={c}>{dir.channel(c)?.name}</Chip>
         ))}
       </div>
     </Card>
   );
 }
 
-function Overview({ p, me, partner }: { p: NonNullable<ReturnType<typeof getPartnership>>; me: Brand; partner: Brand }) {
+function Overview({ p, me, partner, dir }: { p: Partnership; me: Brand; partner: Brand; dir: Directory }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
@@ -265,7 +262,7 @@ function Overview({ p, me, partner }: { p: NonNullable<ReturnType<typeof getPart
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {p.directions.map((d) => (
-                <DirectionSummary key={d.id} d={d} />
+                <DirectionSummary key={d.id} d={d} dir={dir} />
               ))}
             </div>
           )}
@@ -314,21 +311,21 @@ function Overview({ p, me, partner }: { p: NonNullable<ReturnType<typeof getPart
   );
 }
 
-function ChannelsTab({ directions }: { directions: DealDirection[] }) {
+function ChannelsTab({ directions, dir }: { directions: DealDirection[]; dir: Directory }) {
   if (directions.length === 0) return <EmptyState icon={<FileText />} title="No channels selected" description="Channels are chosen in the Deal Builder as part of the proposal." />;
   return (
     <div className="space-y-8">
       {directions.map((d) => (
         <section key={d.id}>
           <h2 className="mb-3 text-[15px] font-semibold text-ink">
-            {getBrand(d.promoterId)!.name} contributes
+            {dir.brand(d.promoterId)!.name} contributes
           </h2>
           {d.channelIds.length === 0 ? (
             <p className="text-sm text-slate-500">No channels selected yet.</p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {d.channelIds.map((id) => {
-                const c = getChannel(id);
+                const c = dir.channel(id);
                 return c ? <ChannelCard key={id} channel={c} /> : null;
               })}
             </div>
@@ -339,9 +336,9 @@ function ChannelsTab({ directions }: { directions: DealDirection[] }) {
   );
 }
 
-async function LinksTab({ partnershipId, partner }: { partnershipId: string; partner: Brand }) {
+async function LinksTab({ partnershipId, partner }: { partnershipId: string; partner: Brand; dir: Directory }) {
   const links = await listLinks(CURRENT_BRAND_ID, { partnershipId });
-  const assets = assetsFor(partner.id).filter((a) => a.approved);
+  const assets = (await assetsFor(partner.id)).filter((a) => a.approved);
   return (
     <div className="space-y-6">
       <Card>

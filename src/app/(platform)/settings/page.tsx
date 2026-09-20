@@ -4,8 +4,9 @@ import { InviteForm } from "@/components/platform/invite-form";
 import { Card, CardHeader, PageHeader, StatusBadge, Table, Td, Th } from "@/components/ui/primitives";
 import { can, ROLES, ROLE_PERMISSIONS, type Permission } from "@/lib/constants";
 import { CURRENT_USER } from "@/lib/data/ledger";
+import { getDirectory } from "@/lib/db/directory";
+import { listTeam } from "@/lib/db/network";
 import { currentBrand } from "@/lib/queries";
-import { store } from "@/lib/store";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -26,9 +27,9 @@ const PERMISSION_LABELS: [Permission, string][] = [
   ["integrations.manage", "Manage integrations"],
 ];
 
-export default function SettingsPage() {
-  const brand = currentBrand();
-  const team = store().team;
+export default async function SettingsPage() {
+  const brand = currentBrand(await getDirectory());
+  const team = await listTeam(brand.id);
   const roleLabel = (id: string) => ROLES.find((r) => r.id === id)?.label ?? id;
 
   return (

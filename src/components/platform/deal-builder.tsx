@@ -133,6 +133,8 @@ export function DealBuilder({
 
   const anyEnabled = state[a.id]!.enabled || state[b.id]!.enabled;
   const negotiating = partnership.proposalStatus === "Sent" || partnership.proposalStatus === "Countered";
+  // Your own open proposal can be revised, but only the other side can accept or counter it.
+  const waiting = negotiating && partnership.proposalFromMe === true;
 
   return (
     <div className="space-y-6">
@@ -332,7 +334,14 @@ export function DealBuilder({
         </div>
         {canNegotiate ? (
           <div className="flex flex-wrap gap-2">
-            {negotiating ? (
+            {waiting ? (
+              <>
+                <span className="self-center text-sm text-slate-500">Waiting for {b.name} to respond.</span>
+                <Button variant="secondary" disabled={pending || !anyEnabled} onClick={() => submit("send")}>
+                  Update proposal
+                </Button>
+              </>
+            ) : negotiating ? (
               <>
                 <Button variant="secondary" disabled={pending || !anyEnabled} onClick={() => submit("counter")}>
                   Counter proposal

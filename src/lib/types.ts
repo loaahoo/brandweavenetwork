@@ -199,6 +199,8 @@ export interface Partnership {
   proposalStatus: "None" | "Draft" | "Sent" | "Countered" | "Accepted";
   owner: string;
   nextStep?: string;
+  /** True when the currently open proposal was sent by the viewing organization (so it must wait for the other side). */
+  proposalFromMe?: boolean;
 }
 
 export interface ConnectionRequest {
@@ -211,6 +213,8 @@ export interface ConnectionRequest {
   structure: CompensationModel | "Open to discuss";
   createdAt: string;
   status: "Pending" | "Accepted" | "Declined" | "Question";
+  /** Set when this request is an application to a posted Opportunity. */
+  opportunityId?: string;
 }
 
 export interface Message {

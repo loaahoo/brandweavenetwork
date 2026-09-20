@@ -16,7 +16,7 @@ npm run dev          # http://localhost:3000
 npm test             # unit tests (engine, parsing, attribution)
 BW_INTEGRATION=1 npm test   # + database pipeline tests against DATABASE_URL (cleans up after itself)
 npm run db:migrate   # apply prisma/migrations to DATABASE_URL
-npm run db:seed      # load the fictional demo network (refuses if data exists; --reset wipes)
+npm run db:seed      # load the fictional demo network into an empty DB; on a seeded DB it only fills in what's missing (--reset wipes)
 npm run typecheck && npm run lint
 npm run db:validate  # validates prisma/schema.prisma
 ```
@@ -33,11 +33,11 @@ Open `/` for the marketing site, then **Enter the demo workspace** to explore th
 | Marketing site (all six sections), sign-in/up pages | Built. Auth pages are a **demo stub** — no provider is connected. |
 | App shell, role-based permissions | Built. Roles are enforced server-side in every action (`src/lib/constants.ts`, `src/app/actions.ts`); the session is the demo user. |
 | Brand profile, Available Channels, Discover (all spec filters), brand pages, Brand Matches | Built. Channel *editing* and file uploads are not yet. |
-| Opportunities, connection requests, Deal Rooms, messaging (incl. internal notes), Deal Builder | Built (in-memory writes). |
+| Opportunities, connection requests, Deal Rooms, messaging (incl. private internal notes), Deal Builder + proposals | Built, **on Postgres**. Accepting a request is atomic; proposals are stored and only take effect when the *other* side accepts. |
 | Tracking links, QR codes, click redirect, conversion API, tracking pixel | Built, **on Postgres (Neon)**, and tested end-to-end. |
 | Commission engine, transaction lifecycle, reversals, payout statements | Built and unit-tested (`src/lib/commission.ts`). |
 | Transactions, Payouts, Analytics | Built, **reading from Postgres**. Integrations, Settings built. |
-| **Persistence** | **Money pipeline is on Postgres**: links, clicks, conversions, transactions, flat fees, payouts, adjustments, API keys. **Still in-memory** (`src/lib/store.ts`, resets on restart / cold start): brands, channels, opportunities, connection requests, Deal Room messages and deal terms, team. Those move next. |
+| **Persistence** | **Everything is on Postgres (Neon)**: brands, channels, opportunities, requests, partnerships and agreements, proposals, messages, team, and the whole money pipeline. The only in-memory piece left is the *signed-in user*: `CURRENT_USER` / `CURRENT_BRAND_ID` are a demo session until real auth lands. |
 | Real auth (Clerk / Auth.js with orgs), object storage, email, Stripe payouts, Shopify | Not started (Phase 2). |
 
 All demo brands (Voyago, Lumen Labs, Stagecraft Live, …) are **fictional**. No real company is represented as a member.
@@ -61,7 +61,8 @@ src/
     tracking.ts          click/link ids, destination normalisation
     matching.ts          rule-based Brand Matches that explain *why* two brands fit
     db/                  Prisma client, enum mappers, and the money pipeline (ledger.ts)
-    store.ts / queries.ts  in-memory store for not-yet-migrated data + read models
+    db/                  client, mappers, directory.ts (brands/channels), network.ts (partnerships, proposals, requests, messages, team), ledger.ts (money pipeline)
+    queries.ts           read models that combine the above (Discover filters, analytics)
     data/                fictional seed data (transactions are generated through the real engine)
 ```
 
@@ -88,12 +89,14 @@ Security properties (covered by `src/lib/conversions.test.ts`): only the **payin
 
 `bw_test_<brand>_demo` keys are **demo-only sandbox keys** (stored hashed in `ApiKey`, like real ones) and are shown on the Integrations page of the public demo workspace. Real keys must be generated once, shown once, and scoped per organization — do this together with real auth.
 
+Reference data (brands, channels) is loaded once per request as a `Directory` snapshot (`await getDirectory()`); everything else is queried per organization.
+
 Transaction statuses are **derived at read time** from each agreement's returns/locking periods, so they advance without a background job; `Paid` and `Reversed` are stored.
 
 ## Next steps (in the order of your build priority)
 
 1. **Auth + organizations** — Clerk or Auth.js; replace `CURRENT_USER`; add a `proxy.ts` gate for `(platform)`.
-2. **Persistence** — ✅ schema + tracking pipeline on Neon. Remaining: brands/channels/opportunities/requests, partnerships + deal terms, messages, team.
+2. **Persistence** — ✅ done. Follow-ups: channel editor + uploads, a job to persist status changes and assemble payouts.
 3. Channel editor + asset uploads (S3-compatible).
 4. Notifications + Resend email; proposal history (`Proposal` snapshots) and contract generation.
 5. Scheduled job to advance transaction statuses and assemble payouts; Stripe Connect for automated payouts.

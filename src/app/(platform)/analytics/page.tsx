@@ -4,6 +4,7 @@ import { BarList } from "@/components/ui/bar-list";
 import { Card, CardHeader, PageHeader, Stat } from "@/components/ui/primitives";
 import { TimeChart } from "@/components/ui/time-chart";
 import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
 import { analyticsFor, weekly } from "@/lib/queries";
 import { cn, formatMoney, formatNumber } from "@/lib/utils";
 
@@ -19,7 +20,7 @@ const RANGES = [
 export default async function AnalyticsPage({ searchParams }: PageProps<"/analytics">) {
   const sp = await searchParams;
   const days = RANGES.find(([d]) => String(d) === sp.range)?.[0] ?? 90;
-  const a = await analyticsFor(CURRENT_BRAND_ID, days);
+  const a = await analyticsFor(await getDirectory(), CURRENT_BRAND_ID, days);
   const money = (n: number) => formatMoney(n, "USD", { compact: n >= 10_000_000 });
   const rows = (list: { name: string; revenueCents: number; conversions: number }[]) =>
     list.slice(0, 6).map((r) => ({ label: r.name, value: r.revenueCents, sub: `${formatNumber(r.conversions)} conversions` }));

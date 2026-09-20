@@ -2,9 +2,10 @@ import { Receipt } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, EmptyState, PageHeader, StatusBadge, Table, Td, Th } from "@/components/ui/primitives";
-import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
+import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
+import { listPartnerships } from "@/lib/db/network";
 import { transactionsFor } from "@/lib/queries";
-import { getPartnership } from "@/lib/store";
 import { TRANSACTION_STATUSES, type TransactionStatus } from "@/lib/types";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
 
@@ -19,7 +20,8 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
   const q = typeof sp.q === "string" ? sp.q.trim().slice(0, 60) : "";
   const page = Math.max(1, parseInt(typeof sp.page === "string" ? sp.page : "1") || 1);
 
-  const all = await transactionsFor(CURRENT_BRAND_ID);
+  const [all, dir, partnerships] = await Promise.all([transactionsFor(CURRENT_BRAND_ID), getDirectory(), listPartnerships(CURRENT_BRAND_ID)]);
+  const partnershipName = new Map(partnerships.map((p) => [p.id, p.name]));
   const counts = TRANSACTION_STATUSES.map((s) => [s, all.filter((t) => t.status === s).length] as const);
   const rows = all.filter((t) => (!status || t.status === status) && (!q || t.orderId.toLowerCase().includes(q.toLowerCase())));
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -73,14 +75,14 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
             <tbody>
               {view.map((t) => {
                 const owe = t.payerId === CURRENT_BRAND_ID;
-                const partner = getBrand(owe ? t.promoterId : t.payerId);
+                const partner = dir.brand(owe ? t.promoterId : t.payerId);
                 return (
                   <tr key={t.id} className="hover:bg-slate-50/60">
                     <Td>{formatDate(t.date, { month: "short", day: "numeric", year: "numeric" })}</Td>
                     <Td className="font-medium text-ink">{partner?.name}</Td>
                     <Td>
                       <Link href={`/partnerships/${t.partnershipId}?tab=performance`} className="hover:text-brand-700 hover:underline">
-                        {getPartnership(t.partnershipId)?.name}
+                        {partnershipName.get(t.partnershipId)}
                       </Link>
                     </Td>
                     <Td className="font-mono text-xs">{t.orderId}</Td>

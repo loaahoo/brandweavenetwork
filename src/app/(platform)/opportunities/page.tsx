@@ -5,9 +5,10 @@ import { BrandAvatar } from "@/components/brand/brand-avatar";
 import { PostOpportunityDialog } from "@/components/platform/post-opportunity";
 import { ApplyDialog } from "@/components/platform/request-dialog";
 import { Badge, Card, Chip, EmptyState, PageHeader, StatusBadge } from "@/components/ui/primitives";
-import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
-import { store } from "@/lib/store";
-import type { Opportunity } from "@/lib/types";
+import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
+import { appliedOpportunityIds, listOpportunities } from "@/lib/db/network";
+import type { Brand, Opportunity } from "@/lib/types";
 import { formatDate, pluralize } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Opportunities" };
@@ -27,8 +28,7 @@ function List({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-function OpportunityCard({ o, mine, applied }: { o: Opportunity; mine: boolean; applied: boolean }) {
-  const brand = getBrand(o.brandId)!;
+function OpportunityCard({ o, brand, mine, applied }: { o: Opportunity; brand: Brand; mine: boolean; applied: boolean }) {
   return (
     <Card className="flex flex-col p-6">
       <div className="flex items-start justify-between gap-3">
@@ -75,13 +75,8 @@ function OpportunityCard({ o, mine, applied }: { o: Opportunity; mine: boolean; 
 export default async function OpportunitiesPage({ searchParams }: PageProps<"/opportunities">) {
   const sp = await searchParams;
   const tab = sp.tab === "mine" ? "mine" : "browse";
-  const all = [...store().opportunities].sort((a, b) => b.postedAt.localeCompare(a.postedAt));
+  const [dir, all, applied] = await Promise.all([getDirectory(), listOpportunities(), appliedOpportunityIds(CURRENT_BRAND_ID)]);
   const list = all.filter((o) => (tab === "mine" ? o.brandId === CURRENT_BRAND_ID : o.brandId !== CURRENT_BRAND_ID));
-  const appliedTo = new Set(
-    store()
-      .requests.filter((r) => r.fromBrandId === CURRENT_BRAND_ID && r.intro.startsWith("Applying to"))
-      .map((r) => r.toBrandId + r.intro),
-  );
 
   return (
     <>
@@ -118,7 +113,7 @@ export default async function OpportunitiesPage({ searchParams }: PageProps<"/op
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
           {list.map((o) => (
-            <OpportunityCard key={o.id} o={o} mine={o.brandId === CURRENT_BRAND_ID} applied={appliedTo.has(o.brandId + `Applying to “${o.title}”.`)} />
+            <OpportunityCard key={o.id} o={o} brand={dir.brand(o.brandId)!} mine={o.brandId === CURRENT_BRAND_ID} applied={applied.has(o.id)} />
           ))}
         </div>
       )}

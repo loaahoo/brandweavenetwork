@@ -36,7 +36,7 @@ export function formatDate(iso: string, opts: Intl.DateTimeFormatOptions = { mon
 /** Fixed "now" for seeded demo data so renders are deterministic. */
 export const DEMO_NOW = "2026-09-19T15:00:00.000Z";
 
-export function timeAgo(iso: string, now: string = DEMO_NOW) {
+export function timeAgo(iso: string, now: string = new Date().toISOString()) {
   const diff = new Date(now).getTime() - new Date(iso).getTime();
   const min = Math.round(diff / 60000);
   if (min < 1) return "just now";

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { BrandCard, MatchCard } from "@/components/platform/cards";
 import { DiscoverFilterBar } from "@/components/platform/discover-filters";
 import { EmptyState, PageHeader } from "@/components/ui/primitives";
+import { getDirectory } from "@/lib/db/directory";
 import { matchBrands } from "@/lib/matching";
 import { currentBrand, discoverBrands, type DiscoverFilters } from "@/lib/queries";
 
@@ -21,9 +22,10 @@ export default async function DiscoverPage({ searchParams }: PageProps<"/discove
   }
   const filtered = Object.keys(filters).length > 0;
 
-  const me = currentBrand();
-  const results = discoverBrands(filters, me.id);
-  const matches = filtered ? [] : matchBrands(me, undefined, 3);
+  const dir = await getDirectory();
+  const me = currentBrand(dir);
+  const results = discoverBrands(dir, filters, me.id);
+  const matches = filtered ? [] : matchBrands(me, dir, { limit: 3 });
 
   return (
     <>

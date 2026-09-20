@@ -75,6 +75,7 @@ model BrandUser {
   organizationId String
   userId         String?
   email          String
+  name           String?
   role           Role
   status         MemberStatus @default(INVITED)
   invitedAt      DateTime     @default(now())
@@ -127,6 +128,7 @@ model BrandProfile {
   lookingFor     String[]
   partnershipModels CompensationModel[]
   verified       Boolean @default(false)
+  color          String? // brand tile colour where no logo is uploaded
 
   // Audience — every field optional.
   primaryAudience   String?
@@ -190,6 +192,7 @@ model MarketingChannel {
   category       ChannelCategory
   description    String
   monthlyReach   Int?
+  reachUnit      String? // "customers / month", "subscribers"…
   geography      String[]
   segment        String?
   placementExamples String[]
@@ -343,6 +346,7 @@ model Message {
   conversationId String
   authorId       String?
   authorOrganizationId String
+  authorName     String
   kind           MessageKind @default(MESSAGE)
   body           String
   mentions       String[]

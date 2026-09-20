@@ -3,22 +3,22 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PairAvatar } from "@/components/brand/brand-avatar";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives";
-import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
+import { listAllMessages } from "@/lib/db/network";
 import { currentBrand, myPartnerships, partnerOf } from "@/lib/queries";
-import { store } from "@/lib/store";
 import { timeAgo } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Messages" };
 export const dynamic = "force-dynamic";
 
-export default function MessagesPage() {
-  const me = currentBrand();
-  const rows = myPartnerships()
+export default async function MessagesPage() {
+  const dir = await getDirectory();
+  const me = currentBrand(dir);
+  const [partnerships, messages] = await Promise.all([myPartnerships(), listAllMessages(me.id)]);
+  const rows = partnerships
     .map((p) => {
-      const thread = store()
-        .messages.filter((m) => m.partnershipId === p.id && (m.kind !== "note" || m.authorBrandId === CURRENT_BRAND_ID))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      return { p, partner: partnerOf(p), last: thread.at(-1), count: thread.filter((m) => m.kind !== "system").length };
+      const thread = messages.filter((m) => m.partnershipId === p.id);
+      return { p, partner: partnerOf(p, dir), last: thread.at(-1), count: thread.filter((m) => m.kind !== "system").length };
     })
     .sort((a, b) => (b.last?.createdAt ?? "").localeCompare(a.last?.createdAt ?? ""));
 

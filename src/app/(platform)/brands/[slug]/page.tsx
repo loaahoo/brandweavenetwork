@@ -7,35 +7,32 @@ import { ChannelCard } from "@/components/platform/cards";
 import { RequestPartnershipDialog } from "@/components/platform/request-dialog";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, CardHeader, Chip } from "@/components/ui/primitives";
-import { BRANDS, getBrandBySlug } from "@/lib/data/brands";
-import { channelsForBrand } from "@/lib/data/channels";
+import { getDirectory } from "@/lib/db/directory";
+import { listPartnerships, listRequests } from "@/lib/db/network";
 import { matchBrands } from "@/lib/matching";
 import { currentBrand } from "@/lib/queries";
-import { store } from "@/lib/store";
 import { formatMoney, formatNumber } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export function generateStaticParams() {
-  return BRANDS.map((b) => ({ slug: b.slug }));
-}
-
 export async function generateMetadata({ params }: PageProps<"/brands/[slug]">): Promise<Metadata> {
   const { slug } = await params;
-  return { title: getBrandBySlug(slug)?.name ?? "Brand" };
+  return { title: (await getDirectory()).brandBySlug(slug)?.name ?? "Brand" };
 }
 
 export default async function BrandPage({ params }: PageProps<"/brands/[slug]">) {
   const { slug } = await params;
-  const brand = getBrandBySlug(slug);
+  const dir = await getDirectory();
+  const brand = dir.brandBySlug(slug);
   if (!brand) notFound();
 
-  const me = currentBrand();
+  const me = currentBrand(dir);
   const isMe = brand.id === me.id;
-  const channels = channelsForBrand(brand.id);
-  const match = isMe ? undefined : matchBrands(me, [brand], 1)[0];
-  const partnership = store().partnerships.find((p) => (p.brandAId === me.id && p.brandBId === brand.id) || (p.brandBId === me.id && p.brandAId === brand.id));
-  const pending = store().requests.find((r) => r.fromBrandId === me.id && r.toBrandId === brand.id && r.status === "Pending");
+  const channels = dir.channelsFor(brand.id);
+  const match = isMe ? undefined : matchBrands(me, dir, { among: [brand], limit: 1 })[0];
+  const [partnerships, { outgoing }] = await Promise.all([listPartnerships(me.id), listRequests(me.id)]);
+  const partnership = partnerships.find((p) => p.brandAId === brand.id || p.brandBId === brand.id);
+  const pending = outgoing.find((r) => r.toBrandId === brand.id && r.status === "Pending");
   const a = brand.audience;
 
   const metrics: [string, number | undefined][] = [
@@ -93,7 +90,7 @@ export default async function BrandPage({ params }: PageProps<"/brands/[slug]">)
             ) : (
               <RequestPartnershipDialog brandId={brand.id} brandName={brand.name} channels={channels} />
             )}
-            <span className="text-xs text-slate-500">{brand.activePartnerships} active partnerships on Brand Weave</span>
+            <span className="text-xs text-slate-500">{brand.activePartnerships > 0 ? `${brand.activePartnerships} live partnership${brand.activePartnerships === 1 ? "" : "s"} on Brand Weave` : "No live partnerships yet"}</span>
           </div>
         </div>
       </Card>

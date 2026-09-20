@@ -20,6 +20,9 @@ import type {
   TransactionStatus,
 } from "../types";
 
+/** "Social & Content" → SOCIAL_CONTENT, "last_click" → LAST_CLICK: the DB enum spelling of an app string. */
+export const enumKey = (s: string) => s.toUpperCase().replace(/[ &-]+/g, "_");
+
 /** Build a bidirectional map from one list of pairs. */
 function pairs<D extends string, A extends string>(list: readonly (readonly [D, A])[]) {
   const toApp = new Map<string, A>(list);

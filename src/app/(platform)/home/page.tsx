@@ -5,10 +5,11 @@ import { BrandAvatar } from "@/components/brand/brand-avatar";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, CardHeader, PageHeader, Stat } from "@/components/ui/primitives";
 import { TimeChart } from "@/components/ui/time-chart";
-import { CURRENT_USER, ACTIVITY } from "@/lib/data/ledger";
+import { getDirectory } from "@/lib/db/directory";
+import { countOpenOpportunities, listRequests, recentActivity } from "@/lib/db/network";
+import { CURRENT_USER } from "@/lib/data/ledger";
 import { matchBrands } from "@/lib/matching";
 import { analyticsFor, currentBrand, myPartnerships, weekly } from "@/lib/queries";
-import { store } from "@/lib/store";
 import type { ActivityItem } from "@/lib/types";
 import { formatMoney, formatNumber, timeAgo } from "@/lib/utils";
 
@@ -25,12 +26,18 @@ const ACTIVITY_ICON: Record<ActivityItem["kind"], typeof Link2> = {
 };
 
 export default async function HomePage() {
-  const brand = currentBrand();
-  const a = await analyticsFor(brand.id);
-  const matches = matchBrands(brand, undefined, 3);
-  const openOpps = store().opportunities.filter((o) => o.brandId !== brand.id && o.status === "Open").length;
-  const inProgress = myPartnerships(brand.id).filter((p) => p.stage !== "Live").length;
-  const requests = store().requests.filter((r) => r.toBrandId === brand.id && r.status === "Pending");
+  const dir = await getDirectory();
+  const brand = currentBrand(dir);
+  const [a, openOpps, partnerships, { incoming }, activity] = await Promise.all([
+    analyticsFor(dir, brand.id),
+    countOpenOpportunities(brand.id),
+    myPartnerships(brand.id),
+    listRequests(brand.id),
+    recentActivity(brand.id, (id) => dir.brand(id)?.name ?? id),
+  ]);
+  const matches = matchBrands(brand, dir, { limit: 3 });
+  const inProgress = partnerships.filter((p) => p.stage !== "Live").length;
+  const requests = incoming.filter((r) => r.status === "Pending");
   const money = (n: number) => formatMoney(n, "USD", { compact: n >= 10_000_000 });
 
   return (
@@ -123,7 +130,7 @@ export default async function HomePage() {
       <Card className="mt-6">
         <CardHeader title="Partnership activity" description="Messages, requests, proposals, links, transactions and payments" />
         <ul className="divide-y divide-slate-100">
-          {[...ACTIVITY].sort((x, y) => y.at.localeCompare(x.at)).map((item) => {
+          {activity.map((item) => {
             const Icon = ACTIVITY_ICON[item.kind];
             const body = (
               <>

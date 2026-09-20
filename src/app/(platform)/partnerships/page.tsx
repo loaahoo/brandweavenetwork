@@ -6,10 +6,10 @@ import { RequestActions } from "@/components/platform/request-actions";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, Chip, EmptyState, PageHeader, StageStepper, StatusBadge } from "@/components/ui/primitives";
 import { describeCompensation } from "@/lib/commission";
-import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
-import { getChannel } from "@/lib/data/channels";
+import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
+import { listRequests } from "@/lib/db/network";
 import { myPartnerships, partnerOf } from "@/lib/queries";
-import { store } from "@/lib/store";
 import { formatDate, timeAgo } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Partnerships" };
@@ -18,9 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function PartnershipsPage({ searchParams }: PageProps<"/partnerships">) {
   const sp = await searchParams;
   const tab = sp.tab === "requests" ? "requests" : "partnerships";
-  const partnerships = myPartnerships();
-  const incoming = store().requests.filter((r) => r.toBrandId === CURRENT_BRAND_ID);
-  const outgoing = store().requests.filter((r) => r.fromBrandId === CURRENT_BRAND_ID);
+  const [dir, partnerships, { incoming, outgoing }] = await Promise.all([getDirectory(), myPartnerships(), listRequests(CURRENT_BRAND_ID)]);
   const pendingIn = incoming.filter((r) => r.status === "Pending" || r.status === "Question").length;
 
   return (
@@ -46,8 +44,8 @@ export default async function PartnershipsPage({ searchParams }: PageProps<"/par
         ) : (
           <div className="space-y-4">
             {partnerships.map((p) => {
-              const partner = partnerOf(p);
-              const me = getBrand(CURRENT_BRAND_ID)!;
+              const partner = partnerOf(p, dir);
+              const me = dir.brand(CURRENT_BRAND_ID)!;
               return (
                 <Link key={p.id} href={`/partnerships/${p.id}`} className="block">
                   <Card className="p-5 transition-shadow hover:shadow-raised">
@@ -76,7 +74,7 @@ export default async function PartnershipsPage({ searchParams }: PageProps<"/par
                             <ArrowLeftRight className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
                             <span>
                               <span className="font-medium text-slate-800">
-                                {getBrand(d.promoterId)!.name} → {getBrand(d.payerId)!.name}
+                                {dir.brand(d.promoterId)!.name} → {dir.brand(d.payerId)!.name}
                               </span>
                               <span className="block text-slate-500">{describeCompensation(d.compensation)}</span>
                             </span>
@@ -107,7 +105,7 @@ export default async function PartnershipsPage({ searchParams }: PageProps<"/par
             ) : (
               <div className="space-y-3">
                 {incoming.map((r) => {
-                  const from = getBrand(r.fromBrandId)!;
+                  const from = dir.brand(r.fromBrandId)!;
                   return (
                     <Card key={r.id} className="p-5">
                       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -126,7 +124,7 @@ export default async function PartnershipsPage({ searchParams }: PageProps<"/par
                             <div className="mt-2.5 flex flex-wrap gap-1.5">
                               <Badge tone="brand">{r.structure}</Badge>
                               {r.channelsOfInterest.map((id) => (
-                                <Chip key={id}>{getChannel(id)?.name}</Chip>
+                                <Chip key={id}>{dir.channel(id)?.name}</Chip>
                               ))}
                             </div>
                           </div>
@@ -150,7 +148,7 @@ export default async function PartnershipsPage({ searchParams }: PageProps<"/par
               <Card>
                 <ul className="divide-y divide-slate-100">
                   {outgoing.map((r) => {
-                    const to = getBrand(r.toBrandId)!;
+                    const to = dir.brand(r.toBrandId)!;
                     return (
                       <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                         <div className="flex items-center gap-3">

@@ -6,16 +6,17 @@ import { ChannelCard } from "@/components/platform/cards";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, PageHeader } from "@/components/ui/primitives";
 import { can } from "@/lib/constants";
-import { channelsForBrand } from "@/lib/data/channels";
+import { getDirectory } from "@/lib/db/directory";
 import { CURRENT_USER } from "@/lib/data/ledger";
 import { currentBrand } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Brand Profile" };
 export const dynamic = "force-dynamic";
 
-export default function BrandProfilePage() {
-  const brand = currentBrand();
-  const channels = channelsForBrand(brand.id);
+export default async function BrandProfilePage() {
+  const dir = await getDirectory();
+  const brand = currentBrand(dir);
+  const channels = dir.channelsFor(brand.id);
 
   return (
     <>

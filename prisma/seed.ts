@@ -3,8 +3,9 @@
  * (links, clicks, conversions, transactions, payouts). Stable string ids from src/lib/data are reused
  * so the UI keeps working unchanged.
  *
- *   npm run db:seed            # refuses if the database already has organizations
- *   npm run db:seed -- --reset # wipes the seeded tables first
+ *   npm run db:seed            # loads the base network into an empty database; on a seeded database it only
+ *                              # fills in anything still missing (never overwrites or deletes)
+ *   npm run db:seed -- --reset # wipes the seeded tables first, then loads everything
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -21,7 +22,7 @@ import {
   SEED_TRANSACTIONS,
   TEAM,
 } from "../src/lib/data/ledger";
-import { PARTNERSHIPS } from "../src/lib/data/partnerships";
+import { CONNECTION_REQUESTS, MESSAGES, OPPORTUNITIES, PARTNERSHIPS } from "../src/lib/data/partnerships";
 import { seeded, DEMO_NOW } from "../src/lib/utils";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
@@ -42,16 +43,32 @@ const TABLES = [
 ];
 
 async function main() {
-  const existing = await prisma.organization.count();
-  if (existing > 0) {
-    if (!process.argv.includes("--reset")) {
-      console.error(`Refusing to seed: ${existing} organizations already exist. Re-run with --reset to wipe seeded tables.`);
-      process.exit(1);
-    }
+  let fresh = (await prisma.organization.count()) === 0;
+  if (!fresh && process.argv.includes("--reset")) {
     console.log("Resetting…");
     await prisma.$executeRawUnsafe(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(", ")} RESTART IDENTITY CASCADE`);
+    fresh = true;
   }
 
+  if (fresh) await seedBase();
+  await seedDirectoryExtras();
+
+  const counts = {
+    organizations: await prisma.organization.count(),
+    agreements: await prisma.agreement.count(),
+    links: await prisma.trackingLink.count(),
+    clicks: await prisma.click.count(),
+    transactions: await prisma.transaction.count(),
+    payouts: await prisma.payout.count(),
+    opportunities: await prisma.opportunity.count(),
+    requests: await prisma.connectionRequest.count(),
+    messages: await prisma.message.count(),
+  };
+  console.log("Database now holds:", counts);
+}
+
+/** Organizations, channels, agreements and the money ledger. Only ever loaded into an empty database. */
+async function seedBase() {
   /* Organizations + profiles */
   await prisma.organization.createMany({ data: BRANDS.map((b) => ({ id: b.id, slug: b.slug, name: b.name })) });
   await prisma.brandProfile.createMany({
@@ -74,6 +91,7 @@ async function main() {
       lookingFor: b.lookingFor,
       partnershipModels: b.partnershipModels.map(E) as never,
       verified: b.verified,
+      color: b.color,
       primaryAudience: b.audience.primary,
       ageRanges: b.audience.ageRanges,
       audienceGeography: b.audience.geography,
@@ -91,7 +109,7 @@ async function main() {
     })),
   });
   await prisma.brandUser.createMany({
-    data: TEAM.map((m) => ({ id: m.id, organizationId: "lumen", email: m.email, role: E(m.role) as never, status: E(m.status) as never })),
+    data: TEAM.map((m) => ({ id: m.id, organizationId: "lumen", name: m.name, email: m.email, role: E(m.role) as never, status: E(m.status) as never })),
   });
   await prisma.asset.createMany({
     data: ASSETS.map((a) => ({ id: a.id, organizationId: a.brandId, name: a.name, kind: E(a.kind) as never, detail: a.detail, approved: a.approved })),
@@ -106,6 +124,7 @@ async function main() {
       category: E(c.category) as never,
       description: c.description,
       monthlyReach: c.monthlyReach,
+      reachUnit: c.reachLabel.split(" ").slice(1).join(" "),
       geography: c.geography,
       segment: c.segment,
       placementExamples: c.placements,
@@ -264,17 +283,70 @@ async function main() {
       return { organizationId: b.id, prefix: key.slice(0, 12), hash: createHash("sha256").update(key).digest("hex"), label: "Sandbox key" };
     }),
   });
+}
 
-  const counts = {
-    organizations: await prisma.organization.count(),
-    agreements: await prisma.agreement.count(),
-    links: await prisma.trackingLink.count(),
-    clicks: await prisma.click.count(),
-    conversions: await prisma.conversion.count(),
-    transactions: await prisma.transaction.count(),
-    payouts: await prisma.payout.count(),
-  };
-  console.log("Seeded:", counts);
+/** Idempotent: each section fills in only what is missing. */
+async function seedDirectoryExtras() {
+  // Columns added after the base seed shipped.
+  for (const b of BRANDS) {
+    await prisma.brandProfile.updateMany({ where: { organizationId: b.id, color: null }, data: { color: b.color } });
+  }
+  for (const c of CHANNELS) {
+    await prisma.marketingChannel.updateMany({ where: { id: c.id, reachUnit: null }, data: { reachUnit: c.reachLabel.split(" ").slice(1).join(" ") } });
+  }
+  for (const m of TEAM) await prisma.brandUser.updateMany({ where: { id: m.id, name: null }, data: { name: m.name } });
+  for (const p of PARTNERSHIPS) {
+    // Keep the demo's "last activity" ordering (only when still at the seed-time default).
+    await prisma.partnership.updateMany({ where: { id: p.id, updatedAt: { gt: new Date(p.updatedAt) } }, data: { updatedAt: new Date(p.updatedAt) } });
+  }
+
+  // Deals still in negotiation are Proposals, not Agreements: live terms only exist once the other side accepts.
+  for (const p of PARTNERSHIPS.filter((x) => x.proposalStatus === "Sent" || x.proposalStatus === "Countered")) {
+    if ((await prisma.proposal.count({ where: { partnershipId: p.id } })) === 0) {
+      const countered = p.proposalStatus === "Countered";
+      await prisma.proposal.create({
+        data: { partnershipId: p.id, version: 1, proposedByOrganizationId: p.brandAId, status: "SENT", terms: p.directions as never, createdAt: new Date(p.createdAt) },
+      });
+      if (countered) {
+        await prisma.proposal.create({
+          data: { partnershipId: p.id, version: 2, proposedByOrganizationId: p.brandBId, status: "COUNTERED", terms: p.directions as never, createdAt: new Date(p.updatedAt) },
+        });
+      }
+    }
+    // Only unused agreements are removed; anything with links or sales stays.
+    await prisma.agreement.deleteMany({ where: { partnershipId: p.id, links: { none: {} }, transactions: { none: {} } } });
+  }
+
+  if ((await prisma.opportunity.count()) === 0) {
+    await prisma.opportunity.createMany({
+      data: OPPORTUNITIES.map((o) => ({
+        id: o.id, organizationId: o.brandId, title: o.title, concept: o.concept, lookingFor: o.lookingFor,
+        offering: o.offering, channelsWanted: o.channelsWanted, models: o.models.map(E) as never,
+        status: E(o.status) as never, closesAt: D(o.closesAt), createdAt: new Date(o.postedAt),
+      })),
+    });
+  }
+
+  if ((await prisma.connectionRequest.count()) === 0) {
+    await prisma.connectionRequest.createMany({
+      data: CONNECTION_REQUESTS.map((r) => ({
+        id: r.id, fromOrganizationId: r.fromBrandId, toOrganizationId: r.toBrandId, intro: r.intro, idea: r.idea,
+        channelIds: r.channelsOfInterest, proposedModel: r.structure === "Open to discuss" ? undefined : (E(r.structure) as never),
+        status: E(r.status) as never, createdAt: new Date(r.createdAt),
+      })),
+    });
+  }
+
+  if ((await prisma.message.count()) === 0) {
+    const conversations = new Map((await prisma.conversation.findMany()).map((c) => [c.partnershipId, c.id]));
+    await prisma.message.createMany({
+      data: MESSAGES.filter((m) => conversations.has(m.partnershipId)).map((m) => ({
+        id: m.id, conversationId: conversations.get(m.partnershipId)!, authorOrganizationId: m.authorBrandId, authorName: m.authorName,
+        kind: E(m.kind ?? "message") as never, body: m.body, mentions: m.mentions ?? [],
+        attachments: (m.attachments ?? undefined) as never, createdAt: new Date(m.createdAt),
+      })),
+    });
+  }
 }
 
 main()

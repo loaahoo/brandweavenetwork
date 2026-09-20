@@ -5,8 +5,7 @@
  * explain why two brands fit. This is the interface a later AI matcher will
  * implement; the reasons array is what it will enrich.
  */
-import { channelsForBrand } from "./data/channels";
-import { BRANDS } from "./data/brands";
+import type { Directory } from "./db/directory";
 import type { Brand, Channel } from "./types";
 
 export interface BrandMatch {
@@ -64,7 +63,10 @@ const concept = (a: Brand, b: Brand) =>
   CONCEPTS[[a.industry, b.industry].sort().join("|")] ??
   `Reach ${b.audience.primary.toLowerCase()} at the moments that matter, in exchange for relevant value for ${a.audience.primary.toLowerCase()}.`;
 
-export function matchBrands(me: Brand, all: Brand[] = BRANDS, limit = 12): BrandMatch[] {
+export function matchBrands(me: Brand, dir: Directory, opts: { limit?: number; among?: Brand[] } = {}): BrandMatch[] {
+  const { limit = 12, among = dir.brands } = opts;
+  const all = among;
+  const channelsForBrand = dir.channelsFor;
   const myChannels = channelsForBrand(me.id);
 
   return all

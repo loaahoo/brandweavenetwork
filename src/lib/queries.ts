@@ -1,24 +1,19 @@
-/**
- * Read models used by pages. Every function is scoped to an organization
- * (brand id) — the same shape the Prisma-backed version will have.
- */
 import { AOV_BANDS } from "./constants";
-import { BRANDS, CURRENT_BRAND_ID, getBrand } from "./data/brands";
-import { channelsForBrand } from "./data/channels";
-import { ASSETS } from "./data/ledger";
-import { store } from "./store";
+import { CURRENT_BRAND_ID } from "./data/brands";
 import { countClicks, listAdjustments, listFlatFees, listLinks, listPayouts, listTransactions } from "./db/ledger";
+import { listAssets, type Directory } from "./db/directory";
+import { listPartnerships } from "./db/network";
 import type { Brand, CompensationModel, Partnership, Transaction } from "./types";
 import { addDays } from "./utils";
 
-export const currentBrand = () => getBrand(CURRENT_BRAND_ID)!;
+/** Reference data (brands, channels) comes from a per-request Directory snapshot: `await getDirectory()`. */
+export const currentBrand = (dir: Directory): Brand => dir.brand(CURRENT_BRAND_ID)!;
 
-export function partnerOf(p: Partnership, me = CURRENT_BRAND_ID): Brand {
-  return getBrand(p.brandAId === me ? p.brandBId : p.brandAId)!;
+export function partnerOf(p: Partnership, dir: Directory, me = CURRENT_BRAND_ID): Brand {
+  return dir.brand(p.brandAId === me ? p.brandBId : p.brandAId)!;
 }
 
-export const myPartnerships = (me = CURRENT_BRAND_ID) =>
-  store().partnerships.filter((p) => p.brandAId === me || p.brandBId === me).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+export const myPartnerships = (me = CURRENT_BRAND_ID) => listPartnerships(me);
 
 /* ------------------------------------------------------------------ */
 /* Discover                                                             */
@@ -41,8 +36,9 @@ export interface DiscoverFilters {
 
 const has = (list: string[], needle: string) => list.some((x) => x.toLowerCase().includes(needle.toLowerCase()));
 
-export function discoverBrands(f: DiscoverFilters, me = CURRENT_BRAND_ID) {
-  return BRANDS.filter((b) => b.id !== me)
+export function discoverBrands(dir: Directory, f: DiscoverFilters, me = CURRENT_BRAND_ID) {
+  return dir.brands
+    .filter((b) => b.id !== me)
     .filter((b) => {
       if (f.q) {
         const hay = [b.name, b.tagline, b.industry, b.subcategory, ...b.productCategories, ...b.lookingFor].join(" ").toLowerCase();
@@ -54,8 +50,7 @@ export function discoverBrands(f: DiscoverFilters, me = CURRENT_BRAND_ID) {
       if (f.geography && !(b.markets.includes(f.geography) || b.markets.includes("Global"))) return false;
       if (f.size && b.size !== f.size) return false;
       if (f.channel) {
-        const chans = channelsForBrand(b.id);
-        if (!chans.some((c) => c.category === f.channel || c.name === f.channel)) return false;
+        if (!dir.channelsFor(b.id).some((c) => c.category === f.channel || c.name === f.channel)) return false;
       }
       if (f.model && !b.partnershipModels.includes(f.model as CompensationModel)) return false;
       if (f.presence && b.presence !== f.presence && !(f.presence !== "Omnichannel" && b.presence === "Omnichannel")) return false;
@@ -67,7 +62,7 @@ export function discoverBrands(f: DiscoverFilters, me = CURRENT_BRAND_ID) {
       if (f.stage && !b.lifecycleStages.includes(f.stage as Brand["lifecycleStages"][number])) return false;
       return true;
     })
-    .map((b) => ({ brand: b, channels: channelsForBrand(b.id).filter((c) => c.status !== "Paused") }));
+    .map((b) => ({ brand: b, channels: dir.channelsFor(b.id).filter((c) => c.status !== "Paused") }));
 }
 
 /* ------------------------------------------------------------------ */
@@ -80,7 +75,7 @@ export const payoutsFor = (me = CURRENT_BRAND_ID) => listPayouts(me);
 export const flatFeesFor = (me = CURRENT_BRAND_ID) => listFlatFees(me);
 export const adjustmentsFor = (me = CURRENT_BRAND_ID) => listAdjustments(me);
 
-export const assetsFor = (brandId: string) => ASSETS.filter((a) => a.brandId === brandId);
+export const assetsFor = (brandId: string) => listAssets(brandId);
 
 /* ------------------------------------------------------------------ */
 /* Analytics                                                            */
@@ -132,16 +127,17 @@ function tally<K extends string>(rows: Transaction[], key: (t: Transaction) => K
   return [...m.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenueCents - a.revenueCents);
 }
 
-export async function analyticsFor(me = CURRENT_BRAND_ID, days = 90): Promise<Analytics> {
+export async function analyticsFor(dir: Directory, me = CURRENT_BRAND_ID, days = 90): Promise<Analytics> {
   const now = new Date();
   const nowIso = now.toISOString();
   const since = new Date(now.getTime() - days * 86_400_000);
 
-  const [all, clicks, flatFees, payouts] = await Promise.all([
+  const [all, clicks, flatFees, payouts, partnerships] = await Promise.all([
     listTransactions(me, { since }),
     countClicks(me),
     listFlatFees(me),
     listPayouts(me),
+    myPartnerships(me),
   ]);
 
   const live = all.filter((t) => t.status !== "Reversed");
@@ -172,7 +168,7 @@ export async function analyticsFor(me = CURRENT_BRAND_ID, days = 90): Promise<An
   const partnerId = (t: Transaction) => (t.promoterId === me ? t.payerId : t.promoterId);
   const byPartner = tally(live, partnerId).map((r) => ({
     id: r.name,
-    name: getBrand(r.name)?.name ?? r.name,
+    name: dir.brand(r.name)?.name ?? r.name,
     revenueCents: r.revenueCents,
     conversions: r.conversions,
   }));
@@ -192,7 +188,7 @@ export async function analyticsFor(me = CURRENT_BRAND_ID, days = 90): Promise<An
     conversionRate: clicks ? live.length / clicks : 0,
     aovCents: live.length ? Math.round(sum(live, (t) => t.saleCents) / live.length) : 0,
     newCustomers: live.filter((t) => t.customerType === "new").length,
-    activePartnerships: myPartnerships(me).filter((p) => p.stage === "Live").length,
+    activePartnerships: partnerships.filter((p) => p.stage === "Live").length,
     pendingPayoutsCents: payouts
       .filter((p) => p.payerId === me && p.status !== "Paid")
       .reduce((n, p) => n + p.commissionCents + p.flatFeeCents + p.adjustmentCents, 0),

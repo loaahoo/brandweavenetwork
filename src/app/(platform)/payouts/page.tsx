@@ -2,7 +2,8 @@ import { Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardHeader, EmptyState, PageHeader, Stat, StatusBadge, Table, Td, Th } from "@/components/ui/primitives";
-import { CURRENT_BRAND_ID, getBrand } from "@/lib/data/brands";
+import { CURRENT_BRAND_ID } from "@/lib/data/brands";
+import { getDirectory } from "@/lib/db/directory";
 import { adjustmentsFor, flatFeesFor, payoutsFor } from "@/lib/queries";
 import type { Payout } from "@/lib/types";
 import { cn, formatDate, formatMoney } from "@/lib/utils";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 const total = (p: Payout) => p.commissionCents + p.flatFeeCents + p.adjustmentCents;
 
 export default async function PayoutsPage() {
-  const all = await payoutsFor(CURRENT_BRAND_ID);
+  const [all, dir] = await Promise.all([payoutsFor(CURRENT_BRAND_ID), getDirectory()]);
   const owe = all.filter((p) => p.payerId === CURRENT_BRAND_ID);
   const owed = all.filter((p) => p.promoterId === CURRENT_BRAND_ID);
   const open = (rows: Payout[]) => rows.filter((p) => p.status !== "Paid");
@@ -58,7 +59,7 @@ export default async function PayoutsPage() {
                     <Td className="font-medium text-ink">{p.period}</Td>
                     <Td>
                       <Link href={`/partnerships/${p.partnershipId}`} className="hover:text-brand-700 hover:underline">
-                        {getBrand(youPay ? p.promoterId : p.payerId)?.name}
+                        {dir.brand(youPay ? p.promoterId : p.payerId)?.name}
                       </Link>
                       <div className="text-xs text-slate-400">{p.transactionCount} transactions</div>
                     </Td>
@@ -91,7 +92,7 @@ export default async function PayoutsPage() {
                   <div>
                     <div className="text-sm font-medium text-ink">{f.label}</div>
                     <div className="text-xs text-slate-500">
-                      {f.payerId === CURRENT_BRAND_ID ? `You pay ${getBrand(f.promoterId)?.name}` : `${getBrand(f.payerId)?.name} pays you`} · due {formatDate(f.dueDate, { month: "short", day: "numeric" })}
+                      {f.payerId === CURRENT_BRAND_ID ? `You pay ${dir.brand(f.promoterId)?.name}` : `${dir.brand(f.payerId)?.name} pays you`} · due {formatDate(f.dueDate, { month: "short", day: "numeric" })}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
